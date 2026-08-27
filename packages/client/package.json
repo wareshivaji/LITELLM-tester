@@ -1,0 +1,21 @@
+{
+  "name": "@tokenshield/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Client SDK for the TokenShield AI gateway. Every call produces a full-fidelity Exchange record.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

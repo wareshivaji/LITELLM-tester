@@ -1,0 +1,100 @@
+/**
+ * The customer-facing client.
+ *
+ * Phase 1 covers the surfaces that cost nothing and touch no provider: the
+ * health probe, the connectivity probe Claude clients send at startup, the
+ * gateway's own metrics snapshot, and the model catalogue (which doubles as
+ * the auth check, since `/v1/models` filters by the key's allowedModels).
+ *
+ * Inference surfaces land in Phase 2; the method list grows here, the
+ * transport underneath never changes.
+ */
+
+import { Transport } from './transport.js';
+import type { TransportInit } from './transport.js';
+import type { Exchange, ModelInfo } from './types.js';
+
+export class TokenShieldClient {
+  readonly transport: Transport;
+
+  constructor(init: TransportInit) {
+    this.transport = new Transport(init);
+  }
+
+  /** `GET /health` — unauthenticated liveness. Proves we reached the gateway. */
+  health(timeoutMs?: number): Promise<Exchange> {
+    return this.transport.send({
+      surface: 'health',
+      method: 'GET',
+      path: '/health',
+      auth: 'none',
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
+  }
+
+  /**
+   * `HEAD /` — the best-effort connectivity probe Claude CLI and Claude Desktop
+   * send at session start. Answering it is optional in the protocol, so a
+   * non-200 here is a warning, not a failure.
+   */
+  probeRoot(timeoutMs?: number): Promise<Exchange> {
+    return this.transport.send({
+      surface: 'probe',
+      method: 'HEAD',
+      path: '/',
+      auth: 'none',
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
+  }
+
+  /** `GET /api/v1/metrics` — the gateway's in-process counters. No auth. */
+  metrics(timeoutMs?: number): Promise<Exchange> {
+    return this.transport.send({
+      surface: 'metrics',
+      method: 'GET',
+      path: '/api/v1/metrics',
+      auth: 'none',
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
+  }
+
+  /**
+   * `GET /v1/models` — the catalogue this key is allowed to use.
+   *
+   * Doubles as the cheapest possible auth check: it runs the full auth
+   * middleware, costs nothing, and calls no provider.
+   */
+  listModels(timeoutMs?: number): Promise<Exchange> {
+    return this.transport.send({
+      surface: 'models',
+      method: 'GET',
+      path: '/v1/models',
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
+  }
+}
+
+/** Reads `{object:"list", data:[…]}` defensively — a shape change is a finding, not a crash. */
+export function extractModels(body: unknown): ModelInfo[] {
+  if (typeof body !== 'object' || body === null) return [];
+  const data = (body as { data?: unknown }).data;
+  if (!Array.isArray(data)) return [];
+  const out: ModelInfo[] = [];
+  for (const entry of data) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const id = record['id'];
+    if (typeof id !== 'string') continue;
+    const model: ModelInfo = {
+      id,
+      object: typeof record['object'] === 'string' ? record['object'] : 'model',
+      owned_by: typeof record['owned_by'] === 'string' ? record['owned_by'] : '',
+    };
+    if (typeof record['display_name'] === 'string') model.display_name = record['display_name'];
+    if (typeof record['anthropic_family_tier'] === 'string') {
+      model.anthropic_family_tier = record['anthropic_family_tier'];
+    }
+    out.push(model);
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
+}

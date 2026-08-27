@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vite/
+*.tsbuildinfo
+
+# Secrets — the ONLY file that ever holds a raw cg-ak-/cg-mk- key.
+# Never commit it. .env.example is the documented, key-free template.
+.env
+.env.*
+!.env.example
+
+# Exported run reports (Phase 7). Local evidence, not source.
+out/*
+!out/.gitkeep
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db
+coverage/

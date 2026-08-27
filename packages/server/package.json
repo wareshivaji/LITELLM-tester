@@ -1,0 +1,22 @@
+{
+  "name": "@tokenshield/lab-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lab backend: holds the credentials, makes the calls, keeps the exchanges in memory. No database.",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tokenshield/client": "*",
+    "fastify": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2"
+  }
+}
