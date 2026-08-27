@@ -8,7 +8,13 @@
  * `Retry-After` or `x-tokenshield-guardrail-ms`. Those headers are the signal.
  */
 
-import { extractModels, runPreflight, surfaceById, TokenShieldClient } from '@tokenshield/client';
+import {
+  extractModels,
+  isStreamable,
+  runPreflight,
+  surfaceById,
+  TokenShieldClient,
+} from '@tokenshield/client';
 import type { AuthScheme, PreflightResult, Profile } from '@tokenshield/client';
 import type { FastifyInstance } from 'fastify';
 
@@ -228,6 +234,85 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     );
 
     return exchange;
+  });
+
+  /**
+   * One streaming call, relayed to the browser as SSE.
+   *
+   * Two streams, not one: the gateway's frames arrive here, get recorded with
+   * their arrival times, and are re-emitted in an envelope the console can
+   * parse with the same SDK parser. The recording is the reason for the hop —
+   * a browser reading the gateway directly could neither see the response
+   * headers nor keep the key out of the page.
+   *
+   * `reply.hijack()` hands the socket over: from that point Fastify sends
+   * nothing, so validation happens *before* it and errors after it travel as
+   * an `error` event rather than an HTTP status.
+   */
+  app.post<{ Body: ExchangeBody }>('/api/stream', async (request, reply) => {
+    const raw = request.body ?? {};
+
+    const surfaceId = typeof raw.surfaceId === 'string' ? raw.surfaceId : '';
+    const surface = surfaceById(surfaceId);
+    if (surface === undefined) {
+      return reply.status(400).send({ error: `Unknown surface "${surfaceId}"` });
+    }
+    if (!isStreamable(surface)) {
+      return reply.status(400).send({ error: `${surface.label} does not support streaming` });
+    }
+
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      // Vite's dev proxy will buffer an event stream without this.
+      'X-Accel-Buffering': 'no',
+    });
+
+    const emit = (event: string, data: unknown): void => {
+      if (res.writableEnded) return;
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // The console's Stop button closes this request. Propagate that upstream so
+    // the gateway connection is dropped too, rather than left generating tokens
+    // nobody is reading.
+    //
+    // Listen on the RESPONSE stream, not the request. Since Node 16 an
+    // IncomingMessage emits 'close' once its body has been consumed — which
+    // Fastify has already done to parse the JSON — so a request-side listener
+    // fires within a millisecond and aborts every stream before the first
+    // frame. The ServerResponse's 'close' is the socket actually going away.
+    const upstream = new AbortController();
+    let finished = false;
+    res.on('close', () => {
+      if (!finished) upstream.abort();
+    });
+
+    try {
+      const exchange = await clientFor(target.value).callStream(surface, raw.body, {
+        onChunk: (chunk) => emit('chunk', chunk),
+        signal: upstream.signal,
+      });
+      finished = true;
+      store.add(exchange);
+      app.log.info(
+        `stream ${surface.id} → ${exchange.response?.status ?? 'incomplete'} ` +
+          `${exchange.response?.chunks?.length ?? 0} frame(s) in ${exchange.timings.totalMs}ms ` +
+          `(${target.value.profile.id}, key=${target.value.keyAlias ?? 'none'})`,
+      );
+      emit('done', exchange);
+    } catch (error) {
+      finished = true;
+      emit('error', { error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
   });
 
   // ── History ────────────────────────────────────────────────────────────────

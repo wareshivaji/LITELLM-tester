@@ -62,6 +62,17 @@ and response inspector with the gateway's signal headers highlighted.
 Targets can be added straight from the console — see [Configuration](#configuration) — so pointing
 at a different gateway or trying a different key needs no file edit and no restart.
 
+## Phase 3 — Streaming
+
+The **Streaming** page streams from any of the four streamable surfaces and shows the shape of the
+response over time, not just its text: when the first frame and first token arrived, where the
+stalls were, and a frame-by-frame timeline with an inline gap bar so a stall is visible at a glance.
+
+A **conformance** panel lists what a strict client would trip over even when the text is perfect —
+frames with an empty `id`, `created: 0`, a null `delta`, tool calls missing `index`, a missing
+`[DONE]`, or a stream cut mid-frame. **Stop** aborts mid-stream and keeps what arrived, including the
+gateway's `X-Request-ID`.
+
 ## Phase 2 — Playground
 
 Send a real request to any of eight surfaces: chat completions, responses, Anthropic messages,
@@ -78,19 +89,24 @@ The result pane shows the extracted output, the error envelope that came back, t
 and token usage; below it the full exchange, and **copy as curl** for pasting into a bug report
 (the credential is emitted as `$TOKENSHIELD_KEY`, never the real or masked value).
 
-Phases 2–8 (Playground, streaming, vendor-SDK adapters, governance lab, MCP, scenarios) are in
+Later phases (vendor-SDK adapters, governance lab, MCP, scenarios) are in
 [`docs/PLAN.md`](docs/PLAN.md). The sidebar shows them greyed out with their phase number.
+
+**[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** is the reference for how this is built, every
+architectural decision and why it was made, phase-by-phase tracking, and the ledger of what the
+tool has established about the gateway.
 
 ---
 
 ## Layout
 
 ```
-packages/client   @tokenshield/client   transport · recorder · classifier · surfaces
+packages/client   @tokenshield/client      transport · classifier · sse · surfaces · probes
+packages/client/test                       unit tests (npm test)
 packages/server   @tokenshield/lab-server  Fastify, 127.0.0.1, in-memory ring buffer
 packages/web      @tokenshield/lab-web     React + Vite console
 scenarios/        declarative suites (Phase 7)
-docs/             PLAN.md · GATEWAY_SURFACE.md
+docs/             ARCHITECTURE.md · PLAN.md · GATEWAY_SURFACE.md
 out/              exported reports (gitignored)
 ```
 

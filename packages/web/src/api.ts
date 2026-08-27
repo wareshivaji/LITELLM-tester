@@ -1,3 +1,4 @@
+import { SSEParser } from '@tokenshield/client';
 import type {
   AuthScheme,
   Exchange,
@@ -7,6 +8,7 @@ import type {
   LabProfile,
   ModelInfo,
   PreflightResult,
+  StreamChunk,
   Verdict,
 } from '@tokenshield/client';
 
@@ -55,6 +57,69 @@ async function json<T>(input: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Streams a call through the backend relay.
+ *
+ * The relay speaks SSE, so this parses it with the SDK's own `SSEParser` — the
+ * same machine the backend used on the gateway's stream. One parser, one set
+ * of edge cases (CRLF frames, multi-byte characters split across reads).
+ *
+ * Aborting the fetch closes the request, which the backend sees and propagates
+ * to the gateway.
+ */
+async function streamSurface(
+  body: TargetRef & { surfaceId: string; body: unknown },
+  handlers: {
+    onChunk: (chunk: StreamChunk) => void;
+    onDone: (exchange: Exchange) => void;
+    onError: (message: string) => void;
+    signal?: AbortSignal;
+  },
+): Promise<void> {
+  const res = await fetch('/api/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    ...(handlers.signal !== undefined ? { signal: handlers.signal } : {}),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      message = (JSON.parse(text) as { error?: string }).error ?? message;
+    } catch {
+      if (text.length > 0) message = text;
+    }
+    handlers.onError(message);
+    return;
+  }
+  if (res.body === null) {
+    handlers.onError('The relay returned no body.');
+    return;
+  }
+
+  const parser = new SSEParser();
+  const reader = res.body.getReader();
+
+  const dispatch = (frames: StreamChunk[]): void => {
+    for (const frame of frames) {
+      if (frame.event === 'chunk') handlers.onChunk(frame.parsed as StreamChunk);
+      else if (frame.event === 'done') handlers.onDone(frame.parsed as Exchange);
+      else if (frame.event === 'error') {
+        handlers.onError((frame.parsed as { error?: string })?.error ?? 'Relay error');
+      }
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value !== undefined) dispatch(parser.push(value, 0));
+  }
+  dispatch(parser.flush(0));
+}
+
 export const api = {
   config: () => json<LabConfigResponse>('/api/config'),
 
@@ -87,6 +152,8 @@ export const api = {
   /** The one call that spends money. Body is forwarded verbatim. */
   callSurface: (body: TargetRef & { surfaceId: string; body: unknown }) =>
     json<Exchange>('/api/exchange', { method: 'POST', body: JSON.stringify(body) }),
+
+  streamSurface,
 
   runs: (limit = 50) => json<RunsResponse>(`/api/runs?limit=${limit}`),
 

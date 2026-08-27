@@ -11,13 +11,16 @@
 import { classify } from './classify.js';
 import { maskSecret, redactHeaders, scrubText } from './redact.js';
 import { parseGatewaySignal } from './signal.js';
+import { SSEParser } from './sse.js';
 import type {
   AuthScheme,
   Exchange,
   ExchangeMode,
   ExchangeRequest,
   ExchangeResponse,
+  GatewaySignal,
   Profile,
+  StreamChunk,
 } from './types.js';
 
 export const LAB_USER_AGENT = 'tokenshield-lab/0.1.0';
@@ -53,8 +56,36 @@ export interface SendRequest {
   mode?: ExchangeMode;
 }
 
+export interface StreamRequest extends SendRequest {
+  /** Called as each frame arrives, so a caller can relay it live. */
+  onChunk?: (chunk: StreamChunk) => void;
+  /** Aborts the stream — the console's Stop button. */
+  signal?: AbortSignal;
+}
+
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Frames are model output, so a credential should never appear in one — but
+ * "should never" is not "cannot", and a frame echoing the request would put a
+ * live key into the exchange log and every export of it.
+ */
+function scrubChunk(chunk: StreamChunk, secret: string): StreamChunk {
+  if (!chunk.raw.includes(secret)) return chunk;
+  const raw = scrubText(chunk.raw, [secret]);
+  const next: StreamChunk = { ...chunk, raw };
+  try {
+    next.parsed = JSON.parse(raw);
+  } catch {
+    delete next.parsed;
+  }
+  return next;
 }
 
 function newId(): string {
@@ -187,7 +218,12 @@ export class Transport {
     }
   }
 
-  async send(req: SendRequest): Promise<Exchange> {
+  /**
+   * Everything both `send` and `stream` need to do before the fetch. Shared so
+   * a streaming call and a buffered one cannot drift in how they authenticate,
+   * what they record, or how they redact.
+   */
+  private prepare(req: SendRequest, accept: string) {
     const scheme = req.auth ?? this.scheme;
     const secret = req.secret !== undefined ? req.secret : this.secret;
     const url = `${joinUrl(this.profile.baseUrl, req.path)}${buildQuery(req.query)}`;
@@ -195,7 +231,7 @@ export class Transport {
     const bodyText = hasBody ? JSON.stringify(req.body) : undefined;
 
     const outgoing: Record<string, string> = {
-      Accept: req.accept ?? 'application/json',
+      Accept: req.accept ?? accept,
       'User-Agent': this.userAgent,
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...this.authHeaderFor(scheme, secret),
@@ -217,12 +253,6 @@ export class Transport {
     if (req.body !== undefined) recordedRequest.body = req.body;
     if (bodyText !== undefined) recordedRequest.bodyText = bodyText;
 
-    const startedAt = nowIso();
-    const t0 = performance.now();
-    const controller = new AbortController();
-    const timeoutMs = req.timeoutMs ?? this.timeoutMs;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
     const base = {
       id: newId(),
       profileId: this.profile.id,
@@ -234,6 +264,18 @@ export class Transport {
       mode: req.mode ?? ('raw' as ExchangeMode),
       request: recordedRequest,
     };
+
+    return { scheme, secret, url, bodyText, outgoing, base };
+  }
+
+  async send(req: SendRequest): Promise<Exchange> {
+    const { secret, url, bodyText, outgoing, base } = this.prepare(req, 'application/json');
+
+    const startedAt = nowIso();
+    const t0 = performance.now();
+    const controller = new AbortController();
+    const timeoutMs = req.timeoutMs ?? this.timeoutMs;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const res = await this.fetchImpl(url, {
@@ -286,6 +328,158 @@ export class Transport {
       };
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Same call, read as a stream.
+   *
+   * Frames are surfaced to `onChunk` as they arrive *and* accumulated into the
+   * returned Exchange, so the console can render live while the record stays
+   * complete and replayable.
+   *
+   * The timeout is a whole-stream budget rather than per-read: a stream that
+   * stalls forever after one token is a failure worth catching, and there is no
+   * safe way to distinguish "the model is thinking" from "the connection is
+   * dead" from the client side.
+   *
+   * An error response is not SSE — the gateway rejects with a JSON body — so a
+   * non-2xx falls back to buffered reading and classifies exactly as `send`
+   * would.
+   */
+  async stream(req: StreamRequest): Promise<Exchange> {
+    const { secret, url, bodyText, outgoing, base } = this.prepare(req, 'text/event-stream');
+
+    const startedAt = nowIso();
+    const t0 = performance.now();
+    const controller = new AbortController();
+    const timeoutMs = req.timeoutMs ?? this.timeoutMs;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // A caller-supplied signal (the Stop button) aborts the same fetch.
+    const onExternalAbort = (): void => controller.abort();
+    req.signal?.addEventListener('abort', onExternalAbort, { once: true });
+
+    const chunks: StreamChunk[] = [];
+    // Captured as soon as headers arrive, so an abort or a mid-stream failure
+    // still reports the gateway's X-Request-ID — which is the only handle on
+    // "did that aborted stream get billed?".
+    let capturedHeaders: Record<string, string> = {};
+    let capturedGateway: GatewaySignal = {};
+
+    try {
+      const res = await this.fetchImpl(url, {
+        method: req.method,
+        headers: outgoing,
+        ...(bodyText !== undefined ? { body: bodyText } : {}),
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+      const ttfbMs = performance.now() - t0;
+      const headers = headersToObject(res.headers);
+      const gateway = parseGatewaySignal(headers);
+      capturedHeaders = headers;
+      capturedGateway = gateway;
+
+      // Not every answer to a streaming request is a stream. A rejection comes
+      // back as ordinary JSON, and so does a request the gateway decided not to
+      // stream (`stream: false`, or a surface that ignores the flag). Reading
+      // either one with an SSE parser finds no `data:` field and throws the
+      // whole body away, so switch on what actually arrived rather than on what
+      // was asked for.
+      const isEventStream = (headers['content-type'] ?? '').includes('text/event-stream');
+      if (!res.ok || res.body === null || !isEventStream) {
+        const rawText = res.body === null ? '' : await res.text();
+        const totalMs = performance.now() - t0;
+        const text = secret !== null ? scrubText(rawText, [secret]) : rawText;
+        const parsed = tryParseJson(text);
+        const response: ExchangeResponse = {
+          status: res.status,
+          statusText: res.statusText,
+          headers,
+        };
+        if (parsed !== undefined) response.body = parsed;
+        if (text.length > 0) response.bodyText = text;
+        return {
+          ...base,
+          response,
+          timings: {
+            startedAt,
+            ttfbMs: round2(ttfbMs),
+            totalMs: round2(totalMs),
+            ...(gateway.guardrailMs !== undefined ? { guardrailMs: gateway.guardrailMs } : {}),
+          },
+          gateway,
+          verdict: classify({ status: res.status, headers, body: parsed }),
+        };
+      }
+
+      const parser = new SSEParser();
+      const reader = res.body.getReader();
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value === undefined) continue;
+        for (const chunk of parser.push(value, round2(performance.now() - t0))) {
+          const scrubbed = secret !== null ? scrubChunk(chunk, secret) : chunk;
+          chunks.push(scrubbed);
+          req.onChunk?.(scrubbed);
+        }
+      }
+      for (const chunk of parser.flush(round2(performance.now() - t0))) {
+        const scrubbed = secret !== null ? scrubChunk(chunk, secret) : chunk;
+        chunks.push(scrubbed);
+        req.onChunk?.(scrubbed);
+      }
+
+      const totalMs = performance.now() - t0;
+      const response: ExchangeResponse = {
+        status: res.status,
+        statusText: res.statusText,
+        headers,
+        chunks,
+      };
+
+      return {
+        ...base,
+        response,
+        timings: {
+          startedAt,
+          ttfbMs: round2(ttfbMs),
+          totalMs: round2(totalMs),
+          ...(gateway.guardrailMs !== undefined ? { guardrailMs: gateway.guardrailMs } : {}),
+        },
+        gateway,
+        verdict: classify({ status: res.status, headers, body: undefined }),
+      };
+    } catch (error) {
+      const totalMs = performance.now() - t0;
+      const externallyAborted = req.signal?.aborted === true;
+      const message = externallyAborted
+        ? `Stopped by the client after ${round2(totalMs)}ms and ${chunks.length} frame(s)`
+        : controller.signal.aborted
+          ? `Timed out after ${timeoutMs}ms`
+          : describeTransportError(error, url);
+
+      // Whatever arrived before the break is kept — a partial stream is the
+      // whole point of an abort test — along with the response headers, so the
+      // request id survives to answer the billing question later.
+      const response: ExchangeResponse | undefined =
+        chunks.length > 0 || Object.keys(capturedHeaders).length > 0
+          ? { status: 0, statusText: 'incomplete', headers: capturedHeaders, chunks }
+          : undefined;
+
+      return {
+        ...base,
+        ...(response !== undefined ? { response } : {}),
+        timings: { startedAt, ttfbMs: 0, totalMs: round2(totalMs) },
+        gateway: capturedGateway,
+        verdict: classify({ status: 0, headers: {}, body: undefined, transportError: message }),
+        transportError: message,
+      };
+    } finally {
+      clearTimeout(timer);
+      req.signal?.removeEventListener('abort', onExternalAbort);
     }
   }
 }

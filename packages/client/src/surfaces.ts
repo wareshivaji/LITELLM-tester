@@ -125,6 +125,41 @@ export function surfaceById(id: string): SurfaceSpec | undefined {
   return SURFACES.find((s) => s.id === id);
 }
 
+/**
+ * Which surfaces can stream. Kept as one set rather than a field on every spec
+ * so there is a single line to change when a surface gains streaming.
+ */
+const STREAMABLE = new Set(['chat.completions', 'responses', 'messages', 'completions']);
+
+export function isStreamable(spec: SurfaceSpec): boolean {
+  return STREAMABLE.has(spec.id);
+}
+
+export const STREAMING_SURFACES: readonly SurfaceSpec[] = SURFACES.filter(isStreamable);
+
+/**
+ * Turns a body into its streaming form.
+ *
+ * `stream: true` is universal across both families. `stream_options` is
+ * OpenAI-only, and only on chat completions — asking for it elsewhere is how
+ * you get a 400 that looks like a gateway bug but is your own request.
+ */
+export function withStreaming(
+  spec: SurfaceSpec,
+  body: unknown,
+  includeUsage = false,
+): unknown {
+  const base =
+    typeof body === 'object' && body !== null && !Array.isArray(body)
+      ? { ...(body as Record<string, unknown>) }
+      : {};
+  base['stream'] = true;
+  if (includeUsage && spec.id === 'chat.completions') {
+    base['stream_options'] = { include_usage: true };
+  }
+  return base;
+}
+
 // ── Reading responses ────────────────────────────────────────────────────────
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -13,7 +13,7 @@
 import type { SurfaceSpec } from './surfaces.js';
 import { Transport } from './transport.js';
 import type { TransportInit } from './transport.js';
-import type { Exchange, ModelInfo } from './types.js';
+import type { Exchange, ModelInfo, StreamChunk } from './types.js';
 
 export class TokenShieldClient {
   readonly transport: Transport;
@@ -88,6 +88,28 @@ export class TokenShieldClient {
       path: surface.path,
       ...(surface.method === 'POST' ? { body } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
+  }
+
+  /**
+   * The same call, read as a stream. The body is still passed through
+   * untouched — including whether it says `stream: true`, which is the
+   * caller's business: sending `stream: false` to this method is itself a
+   * worthwhile test of what the gateway does.
+   */
+  callStream(
+    surface: SurfaceSpec,
+    body: unknown,
+    options: { onChunk?: (chunk: StreamChunk) => void; signal?: AbortSignal; timeoutMs?: number } = {},
+  ): Promise<Exchange> {
+    return this.transport.stream({
+      surface: surface.id,
+      method: surface.method,
+      path: surface.path,
+      body,
+      ...(options.onChunk !== undefined ? { onChunk: options.onChunk } : {}),
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     });
   }
 }

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "TokenShield client SDK + Lab Console — be the customer, see everything the gateway sends back.",
+  "description": "TokenShield client SDK + Lab Console \u2014 be the customer, see everything the gateway sends back.",
   "engines": {
     "node": ">=20.19"
   },
@@ -20,6 +20,7 @@
     "dev:server": "npm run dev -w @tokenshield/lab-server",
     "dev:web": "npm run dev -w @tokenshield/lab-web",
     "typecheck": "npm run typecheck -w @tokenshield/client && npm run typecheck -w @tokenshield/lab-server && npm run typecheck -w @tokenshield/lab-web",
+    "test": "npm run test -w @tokenshield/client",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md,css}\""
   },

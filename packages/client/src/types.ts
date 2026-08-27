@@ -119,10 +119,24 @@ export interface ExchangeRequest {
 }
 
 export interface StreamChunk {
-  /** ms since the request started. */
+  /** Position in the stream, from 0. */
+  seq: number;
+  /** ms since the request started — when this frame arrived, not when it was sent. */
   t: number;
+  /** The SSE `event:` field. Anthropic uses it; OpenAI does not. */
+  event?: string;
+  /** The `data:` payload verbatim. */
   raw: string;
   parsed?: unknown;
+  /** The `[DONE]` sentinel. */
+  done?: boolean;
+  /**
+   * Arrived without a terminating blank line — the stream was cut mid-frame.
+   * A finding, not a parse failure to hide.
+   */
+  incomplete?: boolean;
+  /** An SSE comment line (`: keep-alive`) rather than a data frame. */
+  comment?: boolean;
 }
 
 export interface ExchangeResponse {

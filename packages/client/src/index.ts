@@ -7,8 +7,20 @@ export type { SendRequest, TransportInit } from './transport.js';
 export { extractModels, TokenShieldClient } from './client.js';
 export { runPreflight } from './preflight.js';
 export type { PreflightOptions } from './preflight.js';
-export { readOutput, readUsage, SURFACES, surfaceById } from './surfaces.js';
+export {
+  isStreamable,
+  readOutput,
+  readUsage,
+  STREAMING_SURFACES,
+  SURFACES,
+  surfaceById,
+  withStreaming,
+} from './surfaces.js';
 export type { SurfaceFamily, SurfaceOutput, SurfaceSpec, UsageSummary } from './surfaces.js';
 export { FLAT_ENVELOPE_SURFACE, PROBES, probesFor } from './probes.js';
 export type { Probe, ProbeExpectation } from './probes.js';
 export { toCurl } from './curl.js';
+export { SSEParser } from './sse.js';
+export { analyseStream, gapMs, readStreamDelta } from './stream.js';
+export type { StreamAnalysis, StreamAnomaly } from './stream.js';
+export type { StreamRequest } from './transport.js';
