@@ -7,6 +7,7 @@ import type { LabConfigResponse, PreflightResponse } from './api';
 import { ExchangeLog } from './components/ExchangeLog';
 import { Connect } from './pages/Connect';
 import { Playground } from './pages/Playground';
+import { SdkCompare } from './pages/SdkCompare';
 import { Streaming } from './pages/Streaming';
 
 /**
@@ -23,7 +24,7 @@ const NAV: ReadonlyArray<{ id: string; label: string; phase: number }> = [
   { id: 'scenarios', label: 'Scenarios', phase: 7 },
 ];
 
-const CURRENT_PHASE = 3;
+const CURRENT_PHASE = 4;
 
 export function App() {
   const [config, setConfig] = useState<LabConfigResponse | null>(null);
@@ -203,6 +204,13 @@ export function App() {
         <main className="min-h-0 flex-1 space-y-5 overflow-auto p-6">
           {page === 'playground' ? (
             <Playground
+              profileId={profileId}
+              keyAlias={keyAlias}
+              scheme={scheme}
+              onRecorded={refreshRuns}
+            />
+          ) : page === 'sdk-compare' ? (
+            <SdkCompare
               profileId={profileId}
               keyAlias={keyAlias}
               scheme={scheme}

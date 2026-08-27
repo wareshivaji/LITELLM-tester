@@ -8,6 +8,8 @@ import type {
   LabProfile,
   ModelInfo,
   PreflightResult,
+  SdkMode,
+  SdkOutcome,
   StreamChunk,
   Verdict,
 } from '@tokenshield/client';
@@ -154,6 +156,20 @@ export const api = {
     json<Exchange>('/api/exchange', { method: 'POST', body: JSON.stringify(body) }),
 
   streamSurface,
+
+  /** The same body through several clients, run sequentially on the server. */
+  compare: (
+    body: TargetRef & {
+      surfaceId: string;
+      body: unknown;
+      modes: SdkMode[];
+      maxRetries: number;
+    },
+  ) =>
+    json<{ surfaceId: string; outcomes: SdkOutcome[] }>('/api/compare', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   runs: (limit = 50) => json<RunsResponse>(`/api/runs?limit=${limit}`),
 

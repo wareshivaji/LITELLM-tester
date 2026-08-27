@@ -232,6 +232,21 @@ posture is to be unreachable rather than to grow an auth system.
 safe way from the client side to distinguish "the model is thinking" from "the connection is dead".
 A per-read timeout would need a guess at an acceptable inter-token gap.
 
+### AD-19 · Vendor SDKs are driven through a recording `fetch`, not reimplemented
+**Why.** The point of Phase 4 is what a *real customer's SDK* does, so the SDKs are the stock
+published versions and nothing rewrites the requests they build. A `fetch` handed to their
+constructors records through `Transport.sendRaw`, which shares `perform()` with `send()` — so an
+SDK call and a hand-built call produce the same Exchange and are directly comparable.
+**Consequences.** (a) The SDK is handed a *reconstructed* `Response`, because the body has already
+been read to record it and a stream can only be read once; `content-encoding` and `content-length`
+are dropped from the copy or the SDK tries to decompress plain text. (b) Each retry is its own
+fetch and therefore its own Exchange — which is how retry behaviour became measurable at all.
+(c) Each SDK declares its own `Fetch` type over its own `Response` shim, so the cast at the
+constructor takes its type from the SDK's own signature: a version bump that changes it becomes a
+compile error rather than a silent mismatch.
+**Rejected.** Reimplementing the SDKs' wire behaviour. It would test our understanding of them
+rather than them.
+
 ### AD-18 · Prettier + `tsc --noEmit` now; ESLint in Phase 8
 **Why.** ESLint 9's flat-config migration is churn that buys nothing while the codebase is this
 young. Type checking already catches the class of bug that matters. Revisit with the rest of the
@@ -247,7 +262,7 @@ hardening.
 | 1.5 | UI-entered gateways and keys (session targets) | **Done** | 8/8 | `7bc86d6` |
 | 2 | Playground — 8 surfaces, probes, inspector, curl | **Done** | 17/17 | `d15d573` |
 | 3 | Streaming — SSE parser, relay, timeline, conformance | **Done** | 13/13 (+20 unit) | `4210c0c` |
-| 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | Not started | — | — |
+| 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | **Done** | 13/13 | pending |
 | 5 | Governance lab + key minting via management key | Not started | — | — |
 | 6 | Tools & MCP | Not started | — | — |
 | 7 | Scenario runner, Compare, report export | Not started | — | — |
@@ -270,6 +285,10 @@ presented for approval **before** they run. Nothing is pushed without an explici
 - **Phase 3** — 20 parser assertions; non-streamable surface rejected; 401 on the streaming path;
   chat / Responses / Anthropic streams; `include_usage`; frame conformance; timing; `stream:false`;
   client abort; request-id retention.
+- **Phase 4** — mode legality per surface; illegal mode rejected; auth failure through both vendor
+  SDKs; the flat 501 envelope through the OpenAI SDK, with and without retries; raw vs SDK on chat,
+  messages, embeddings and Responses; `stop` as a string and `n=2` through the typed SDK; no retry
+  on a 404.
 
 ### Defects found in this tool by its own tests
 
@@ -305,7 +324,7 @@ What the tool has established about TokenShield. Measured against **Prod US** on
 |---|---|
 | `/v1/messages` buffered | Rejects its own **mandatory** `max_tokens` on a Bedrock Nova model: *"extraneous key [max_tokens] is not permitted"*. The Anthropic body reaches Bedrock unchanged |
 | `/v1/messages` streaming | Answers **HTTP 200**, then a single `event: error` frame carrying that same Bedrock complaint. A client checking `response.ok` sees success and must inspect the stream to learn it failed |
-| Chat streaming conformance | Of 18 frames in one stream: **17 with `id: ""`**, **17 with `created: 0`**, **2 with `delta: null`**. The text is fine; a strict client is not |
+| Chat streaming conformance | Of 18 frames in one stream: **17 with `id: ""`**, **17 with `created: 0`**, **2 with `delta: null`**. The text is fine; a strict client is not. **Streaming-only** — the buffered response on the same surface carries a real `chatcmpl-bedrock-…` id and a real `created` timestamp, so this is the SSE path specifically |
 | `stream: false` on a streaming call | Answered as ordinary `application/json`, not an empty stream |
 | Empty `messages: []` | 400, but authored by Bedrock — the empty array arrives as `null`. Not caught at the gateway |
 | Embeddings with a chat model | 400 *"required key [messages] not found"* — a customer asking for embeddings is told `messages` is missing. No model-capability check |
@@ -315,6 +334,23 @@ What the tool has established about TokenShield. Measured against **Prod US** on
 | Guardrails | **This org has no guardrail configured** — `x-tokenshield-guardrail-ms: 0` means the middleware ran with no rules. Blocks Phase 5 governance testing until a rule exists |
 | Prod Mumbai | The same key that works on Prod US returns 401 there, and Mumbai reports `total_requests: 0` — separate auth store |
 | Budget headers | Live and readable: org `$35.75 / $100`, group `$2.82 / $5.00` |
+
+### What a real customer's SDK sees (Phase 4)
+
+Stock `openai@4.104.0` and `@anthropic-ai/sdk@0.32.1`, unmodified.
+
+| Finding | Detail |
+|---|---|
+| **A 401 on `/v1/messages` uses the OpenAI envelope, not the Anthropic one** | `@anthropic-ai/sdk` raises `AuthenticationError` but extracts **no type and no code**, and its message is the raw JSON body. Handler 400s on the same path *do* use the Anthropic envelope, so this is specific to the auth path. A Claude-SDK customer with a bad key gets an unparseable error |
+| **`/v1/moderations` 501 is retried three times by default** | 501 is retryable under OpenAI SDK rules and `openai`'s default `maxRetries` is 2, so a permanently-unsupported endpoint costs 3 round trips, 3 gateway log entries and backoff before failing. `x-stainless-retry-count` goes 0→1→2. Returning a non-retryable status (400/404/501→404) would fix it |
+| **LANDMINE-3, as the customer experiences it** | A developer writing the perfectly legal `stop="
+
+"` gets `BadRequestError: 400 The stop sequence value at inferenceConfig.stopSequences.0 is blank.` — Bedrock internals, meaningless to them |
+| Flat envelope through a typed SDK | The SDK still produces a typed `InternalServerError`, but with no `type` and no `code`, and the message is a quoted JSON string. Better than a crash, useless for programmatic handling |
+| The OpenAI SDK parses the gateway's Responses payload | No divergence between raw and SDK on `/v1/responses`. Good news |
+| Clients agree on the happy path | chat, embeddings and Responses: identical status, identical output, raw vs SDK |
+| A 404 is correctly not retried | `maxRetries=2` on an unknown model still makes exactly 1 attempt |
+| Headers real customer traffic carries | Both SDKs add 8 `x-stainless-*` headers (arch, lang, os, package-version, retry-count, runtime, runtime-version, timeout); Anthropic also sends `anthropic-version`. Anything gateway-side that keys off headers sees these in production |
 
 ---
 

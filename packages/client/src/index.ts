@@ -24,3 +24,10 @@ export { SSEParser } from './sse.js';
 export { analyseStream, gapMs, readStreamDelta } from './stream.js';
 export type { StreamAnalysis, StreamAnomaly } from './stream.js';
 export type { StreamRequest } from './transport.js';
+export {
+  ANTHROPIC_SDK_SURFACES,
+  OPENAI_SDK_SURFACES,
+  runWithSdk,
+  sdkModesFor,
+} from './adapters.js';
+export type { AdapterInit, SdkFailure, SdkMode, SdkOutcome } from './adapters.js';

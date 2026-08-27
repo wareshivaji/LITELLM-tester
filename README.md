@@ -62,6 +62,20 @@ and response inspector with the gateway's signal headers highlighted.
 Targets can be added straight from the console — see [Configuration](#configuration) — so pointing
 at a different gateway or trying a different key needs no file edit and no restart.
 
+## Phase 4 — SDK compare
+
+The **SDK compare** page sends the same body through up to three clients — hand-built raw HTTP, the
+stock `openai` package, and the stock `@anthropic-ai/sdk` — and leads with one line: **clients agree**
+or **clients disagree**.
+
+Raw HTTP shows you the response body. Only a real SDK shows you what a developer's `catch` block
+receives: the error class, whether the SDK could type it at all, and which `type`/`code` it managed
+to parse. Every HTTP attempt is listed separately, so an SDK retrying on its own schedule is visible
+as three rows rather than one.
+
+Clients run **sequentially, never in parallel** — three concurrent calls would trip the 60 RPM
+limiter and teach you nothing about the thing you were comparing.
+
 ## Phase 3 — Streaming
 
 The **Streaming** page streams from any of the four streamable surfaces and shows the shape of the

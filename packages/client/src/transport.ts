@@ -109,6 +109,31 @@ function buildQuery(query: SendRequest['query']): string {
   return encoded.length > 0 ? `?${encoded}` : '';
 }
 
+/** Path portion of an absolute URL, for the Exchange record. */
+function pathOf(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Which auth header a foreign request used. The vendor SDKs choose for
+ * themselves — `openai` sends Authorization: Bearer, `@anthropic-ai/sdk` sends
+ * x-api-key — and that choice is worth recording rather than assuming.
+ */
+function schemeFromHeaders(headers: Record<string, string>): AuthScheme {
+  for (const name of Object.keys(headers)) {
+    const lower = name.toLowerCase();
+    if (lower === 'authorization') return 'bearer';
+    if (lower === 'x-api-key') return 'x-api-key';
+    if (lower === 'x-management-key') return 'x-management-key';
+    if (lower === 'x-admin-key') return 'x-admin-key';
+  }
+  return 'none';
+}
+
 function headersToObject(headers: Headers): Record<string, string> {
   const out: Record<string, string> = {};
   headers.forEach((value, key) => {
@@ -270,16 +295,103 @@ export class Transport {
 
   async send(req: SendRequest): Promise<Exchange> {
     const { secret, url, bodyText, outgoing, base } = this.prepare(req, 'application/json');
+    return this.perform({
+      base,
+      url,
+      method: req.method,
+      headers: outgoing,
+      ...(bodyText !== undefined ? { bodyText } : {}),
+      secret,
+      timeoutMs: req.timeoutMs ?? this.timeoutMs,
+      readBody: req.method !== 'HEAD',
+    });
+  }
+
+  /**
+   * Record a call whose URL, headers and body were built by someone else.
+   *
+   * This is what the vendor-SDK adapters use: `openai` and `@anthropic-ai/sdk`
+   * construct their own requests, and the point of Phase 4 is to see exactly
+   * what they construct — so nothing here rewrites it. Only the recording is
+   * ours, and it goes through the same `perform` as `send`, so an SDK call and a
+   * hand-built call produce Exchanges that are directly comparable.
+   */
+  async sendRaw(req: {
+    surface: string;
+    mode: ExchangeMode;
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    bodyText?: string;
+    body?: unknown;
+    timeoutMs?: number;
+  }): Promise<Exchange> {
+    const secret = this.secret;
+    // Did the SDK actually attach our credential? It builds its own headers, so
+    // this is an observation, not an assumption.
+    const credentialSent =
+      secret !== null &&
+      secret.length > 0 &&
+      Object.entries(req.headers).some(([, value]) => value.includes(secret));
+
+    const recordedRequest: ExchangeRequest = {
+      method: req.method,
+      url: req.url,
+      path: pathOf(req.url),
+      headers: redactHeaders(req.headers),
+    };
+    if (req.body !== undefined) recordedRequest.body = req.body;
+    if (req.bodyText !== undefined) recordedRequest.bodyText = req.bodyText;
+
+    const base = {
+      id: newId(),
+      profileId: this.profile.id,
+      profileLabel: this.profile.label,
+      baseUrl: this.profile.baseUrl,
+      keyAlias: credentialSent ? this.keyAlias : null,
+      authScheme: schemeFromHeaders(req.headers),
+      surface: req.surface,
+      mode: req.mode,
+      request: recordedRequest,
+    };
+
+    return this.perform({
+      base,
+      url: req.url,
+      method: req.method,
+      headers: req.headers,
+      ...(req.bodyText !== undefined ? { bodyText: req.bodyText } : {}),
+      secret,
+      timeoutMs: req.timeoutMs ?? this.timeoutMs,
+      readBody: req.method !== 'HEAD',
+    });
+  }
+
+  /**
+   * The buffered request/record/classify cycle, shared by `send` and
+   * `sendRaw`. One copy, so a hand-built call and a vendor-SDK call cannot
+   * differ in what gets captured or how a failure is named.
+   */
+  private async perform(args: {
+    base: Omit<Exchange, 'response' | 'timings' | 'gateway' | 'verdict' | 'transportError'>;
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    bodyText?: string;
+    secret: string | null;
+    timeoutMs: number;
+    readBody: boolean;
+  }): Promise<Exchange> {
+    const { base, url, method, headers: outgoing, bodyText, secret, timeoutMs, readBody } = args;
 
     const startedAt = nowIso();
     const t0 = performance.now();
     const controller = new AbortController();
-    const timeoutMs = req.timeoutMs ?? this.timeoutMs;
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const res = await this.fetchImpl(url, {
-        method: req.method,
+        method,
         headers: outgoing,
         ...(bodyText !== undefined ? { body: bodyText } : {}),
         signal: controller.signal,
@@ -287,7 +399,7 @@ export class Transport {
       });
       const ttfbMs = performance.now() - t0;
 
-      const rawText = req.method === 'HEAD' ? '' : await res.text();
+      const rawText = readBody ? await res.text() : '';
       const totalMs = performance.now() - t0;
       const text = secret !== null ? scrubText(rawText, [secret]) : rawText;
       const headers = headersToObject(res.headers);
@@ -306,22 +418,21 @@ export class Transport {
 
       const timings = {
         startedAt,
-        ttfbMs: Math.round(ttfbMs * 100) / 100,
-        totalMs: Math.round(totalMs * 100) / 100,
+        ttfbMs: round2(ttfbMs),
+        totalMs: round2(totalMs),
         ...(gateway.guardrailMs !== undefined ? { guardrailMs: gateway.guardrailMs } : {}),
       };
 
       return { ...base, response, timings, gateway, verdict };
     } catch (error) {
       const totalMs = performance.now() - t0;
-      const aborted = controller.signal.aborted;
-      const message = aborted
+      const message = controller.signal.aborted
         ? `Timed out after ${timeoutMs}ms`
         : describeTransportError(error, url);
 
       return {
         ...base,
-        timings: { startedAt, ttfbMs: 0, totalMs: Math.round(totalMs * 100) / 100 },
+        timings: { startedAt, ttfbMs: 0, totalMs: round2(totalMs) },
         gateway: {},
         verdict: classify({ status: 0, headers: {}, body: undefined, transportError: message }),
         transportError: message,

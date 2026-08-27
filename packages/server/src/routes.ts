@@ -12,10 +12,18 @@ import {
   extractModels,
   isStreamable,
   runPreflight,
+  runWithSdk,
+  sdkModesFor,
   surfaceById,
   TokenShieldClient,
 } from '@tokenshield/client';
-import type { AuthScheme, PreflightResult, Profile } from '@tokenshield/client';
+import type {
+  AuthScheme,
+  PreflightResult,
+  Profile,
+  SdkMode,
+  SdkOutcome,
+} from '@tokenshield/client';
 import type { FastifyInstance } from 'fastify';
 
 import type { LabConfig } from './config.js';
@@ -33,6 +41,11 @@ interface TargetBody {
 interface ExchangeBody extends TargetBody {
   surfaceId?: unknown;
   body?: unknown;
+}
+
+interface CompareBody extends ExchangeBody {
+  modes?: unknown;
+  maxRetries?: unknown;
 }
 
 interface AddProfileBody {
@@ -313,6 +326,74 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     } finally {
       if (!res.writableEnded) res.end();
     }
+  });
+
+  /**
+   * The same request, sent by up to three different clients.
+   *
+   * Modes run **sequentially, never in parallel.** The per-key rate limiter
+   * defaults to 60 requests a minute, and firing three concurrent calls (each
+   * of which may retry) is a good way to turn a comparison into a 429 and learn
+   * nothing about the thing being compared.
+   */
+  app.post<{ Body: CompareBody }>('/api/compare', async (request, reply) => {
+    const raw = request.body ?? {};
+
+    const surfaceId = typeof raw.surfaceId === 'string' ? raw.surfaceId : '';
+    const surface = surfaceById(surfaceId);
+    if (surface === undefined) {
+      return reply.status(400).send({ error: `Unknown surface "${surfaceId}"` });
+    }
+
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const allowed = sdkModesFor(surface.id);
+    const requested: unknown[] = Array.isArray(raw.modes) ? raw.modes : [];
+    const modes: SdkMode[] = allowed.filter((m) => requested.includes(m));
+    if (modes.length === 0) {
+      return reply
+        .status(400)
+        .send({ error: `Pick at least one of: ${allowed.join(', ')} for ${surface.label}` });
+    }
+
+    const maxRetries =
+      typeof raw.maxRetries === 'number' && raw.maxRetries >= 0 && raw.maxRetries <= 5
+        ? raw.maxRetries
+        : 0;
+
+    const outcomes: SdkOutcome[] = [];
+    for (const mode of modes) {
+      if (mode === 'raw') {
+        const exchange = await clientFor(target.value).call(surface, raw.body);
+        store.add(exchange);
+        outcomes.push({
+          mode: 'raw',
+          ok: exchange.verdict.kind === 'ok',
+          ...(exchange.response?.body !== undefined ? { result: exchange.response.body } : {}),
+          attempts: [exchange],
+          sdkHeaders: [],
+        });
+        continue;
+      }
+
+      const outcome = await runWithSdk(mode, surface.id, raw.body, {
+        profile: target.value.profile,
+        keyAlias: target.value.keyAlias,
+        secret: target.value.secret,
+        timeoutMs: config.timeoutMs,
+        maxRetries,
+      });
+      store.addAll(outcome.attempts);
+      outcomes.push(outcome);
+    }
+
+    app.log.info(
+      `compare ${surface.id} [${modes.join(', ')}] → ` +
+        outcomes.map((o) => `${o.mode}:${o.ok ? 'ok' : 'fail'}(${o.attempts.length})`).join(' '),
+    );
+
+    return { surfaceId: surface.id, outcomes };
   });
 
   // ── History ────────────────────────────────────────────────────────────────
