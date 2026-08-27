@@ -48,6 +48,9 @@ no provider and cost nothing:
 Plus the **exchange log** — every call the lab has made this session, expandable into a request
 and response inspector with the gateway's signal headers highlighted.
 
+Targets can be added straight from the console — see [Configuration](#configuration) — so pointing
+at a different gateway or trying a different key needs no file edit and no restart.
+
 Phases 2–8 (Playground, streaming, vendor-SDK adapters, governance lab, MCP, scenarios) are in
 [`docs/PLAN.md`](docs/PLAN.md). The sidebar shows them greyed out with their phase number.
 
@@ -89,8 +92,26 @@ only disk writes are your `.env.local` and whatever you explicitly Export into `
 
 ## Configuration
 
-Everything lives in **`.env.local`** (gitignored). See [`.env.example`](.env.example) for the
-annotated template.
+Two ways in, and the UI shows which is which.
+
+### From the console — no restart, nothing saved
+
+**+ add** next to **Gateway** or **API key** on the Connect page. Type a label and a base URL, or
+an alias and a key, and it appears in the dropdown immediately.
+
+These are **session targets**. The key you paste crosses loopback once, is held in the backend's
+memory, and is never written to `.env.local`, never returned to the browser, and never put in
+`localStorage` — reload the page and it is still listed, because the backend has it and the tab
+does not. Restart the backend and session targets are gone. The dropdown groups them under
+"This session — gone on restart" so that is never a surprise.
+
+An alias that already exists is **rejected, not shadowed**. Silent credential precedence is the
+exact bug that made a whole Python test run authenticate as the wrong key, and a friendlier form
+is no reason to reintroduce it.
+
+### From `.env.local` — for the ones you use daily
+
+Gitignored. See [`.env.example`](.env.example) for the annotated template.
 
 ```dotenv
 TSLAB_PROFILE_LOCAL=Local gateway|http://localhost:4000

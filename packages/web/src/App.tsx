@@ -56,6 +56,32 @@ export function App() {
       });
   }, []);
 
+  /**
+   * Refetch after a session target was added or removed. Selection is
+   * re-validated here rather than in the picker: removing the selected key
+   * would otherwise leave the target strip naming something that no longer
+   * exists, and the next preflight would 400 on an alias the UI still shows.
+   */
+  const refreshConfig = useCallback(() => {
+    api
+      .config()
+      .then((cfg) => {
+        setConfig(cfg);
+        setRunsCapacity(cfg.historyLimit);
+        setProfileId((current) =>
+          cfg.profiles.some((p) => p.id === current) ? current : cfg.defaults.profileId,
+        );
+        setKeyAlias((current) =>
+          current === null || cfg.keys.some((k) => k.alias === current)
+            ? current
+            : cfg.defaults.keyAlias,
+        );
+      })
+      .catch(() => {
+        /* transient — the page keeps working with the config it already has */
+      });
+  }, []);
+
   const refreshRuns = useCallback(() => {
     api
       .runs()
@@ -100,7 +126,8 @@ export function App() {
   }
 
   const profile = config.profiles.find((p) => p.id === profileId);
-  const maskedKey = config.keys.find((k) => k.alias === keyAlias)?.masked;
+  const key = config.keys.find((k) => k.alias === keyAlias);
+  const sessionTarget = profile?.source === 'session' || key?.source === 'session';
 
   return (
     <div className="flex h-full">
@@ -151,7 +178,15 @@ export function App() {
           <span className="text-zinc-700">|</span>
           <span className="text-zinc-600">key</span>
           <span className="mono text-zinc-300">{keyAlias ?? 'none'}</span>
-          {maskedKey !== undefined && <span className="mono text-zinc-600">{maskedKey}</span>}
+          {key !== undefined && <span className="mono text-zinc-600">{key.masked}</span>}
+          {sessionTarget && (
+            <span
+              className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300"
+              title="This target was entered in the console and is held in memory only — it disappears when the lab server restarts."
+            >
+              session
+            </span>
+          )}
           <span className="mono ml-auto text-zinc-600">{scheme}</span>
         </header>
 
@@ -164,6 +199,7 @@ export function App() {
             onProfile={setProfileId}
             onKey={setKeyAlias}
             onScheme={setScheme}
+            onTargetsChanged={refreshConfig}
             onRun={runPreflight}
             running={running}
             result={result}

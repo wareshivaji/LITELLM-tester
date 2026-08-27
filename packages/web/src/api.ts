@@ -2,14 +2,15 @@ import type {
   AuthScheme,
   Exchange,
   ExchangeSummary,
-  KeyRef,
+  KeyKind,
+  LabKeyRef,
+  LabProfile,
   PreflightResult,
-  Profile,
 } from '@tokenshield/client';
 
 export interface LabConfigResponse {
-  profiles: Profile[];
-  keys: KeyRef[];
+  profiles: LabProfile[];
+  keys: LabKeyRef[];
   defaults: { profileId: string; keyAlias: string | null };
   warnings: string[];
   envFile: string;
@@ -31,6 +32,7 @@ async function json<T>(input: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
+  if (res.status === 204) return undefined as T;
   if (!res.ok) {
     const text = await res.text();
     let message = `${res.status} ${res.statusText}`;
@@ -47,6 +49,22 @@ async function json<T>(input: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   config: () => json<LabConfigResponse>('/api/config'),
+
+  addProfile: (body: { label: string; baseUrl: string }) =>
+    json<LabProfile>('/api/targets/profiles', { method: 'POST', body: JSON.stringify(body) }),
+
+  removeProfile: (id: string) =>
+    json<void>(`/api/targets/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  /** The pasted secret goes over loopback once and is never returned. */
+  addKey: (body: { alias: string; secret: string; kind: KeyKind }) =>
+    json<LabKeyRef & { warning?: string }>('/api/targets/keys', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  removeKey: (alias: string) =>
+    json<void>(`/api/targets/keys/${encodeURIComponent(alias)}`, { method: 'DELETE' }),
 
   preflight: (body: { profileId: string; keyAlias: string | null; scheme: AuthScheme }) =>
     json<PreflightResponse>('/api/preflight', { method: 'POST', body: JSON.stringify(body) }),

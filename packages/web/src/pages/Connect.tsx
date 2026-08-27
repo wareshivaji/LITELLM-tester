@@ -4,7 +4,8 @@ import type { AuthScheme, ExchangeSummary } from '@tokenshield/client';
 
 import type { LabConfigResponse, PreflightResponse } from '../api';
 import { ExchangeLog } from '../components/ExchangeLog';
-import { Card, Empty, Field, Json, selectClass, StatusPill } from '../components/ui';
+import { TargetPicker } from '../components/TargetPicker';
+import { Card, Empty, Json, StatusPill } from '../components/ui';
 
 interface ConnectProps {
   config: LabConfigResponse;
@@ -14,6 +15,7 @@ interface ConnectProps {
   onProfile: (id: string) => void;
   onKey: (alias: string | null) => void;
   onScheme: (scheme: AuthScheme) => void;
+  onTargetsChanged: () => void;
   onRun: () => void;
   running: boolean;
   result: PreflightResponse | null;
@@ -26,7 +28,6 @@ interface ConnectProps {
 
 export function Connect(props: ConnectProps) {
   const { config, result } = props;
-  const apiKeys = config.keys.filter((k) => k.kind === 'api');
   const [modelFilter, setModelFilter] = useState('');
 
   const models = useMemo(() => {
@@ -56,87 +57,20 @@ export function Connect(props: ConnectProps) {
         </div>
       )}
 
-      <Card
-        title="Target"
-        subtitle="Which gateway, which credential, presented how. Stamped on every exchange."
-      >
-        <div className="grid gap-4 md:grid-cols-3">
-          <Field label="Profile" hint={props.config.profiles.find((p) => p.id === props.profileId)?.baseUrl}>
-            <select
-              className={selectClass}
-              value={props.profileId}
-              onChange={(e) => props.onProfile(e.target.value)}
-            >
-              {config.profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field
-            label="API key"
-            hint={
-              apiKeys.length === 0
-                ? 'Add TSLAB_KEY_<ALIAS> to .env.local'
-                : (apiKeys.find((k) => k.alias === props.keyAlias)?.masked ?? 'unauthenticated')
-            }
-          >
-            <select
-              className={selectClass}
-              value={props.keyAlias ?? ''}
-              onChange={(e) => props.onKey(e.target.value === '' ? null : e.target.value)}
-            >
-              <option value="">— none (unauthenticated) —</option>
-              {apiKeys.map((k) => (
-                <option key={k.alias} value={k.alias}>
-                  {k.alias}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Auth header" hint="TokenShield accepts both; clients in the wild use both.">
-            <div className="flex gap-2">
-              {(['bearer', 'x-api-key'] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => props.onScheme(s)}
-                  className={`mono flex-1 rounded-md border px-3 py-2 text-xs ${
-                    props.scheme === s
-                      ? 'border-sky-600 bg-sky-950/40 text-sky-200'
-                      : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
-                  }`}
-                >
-                  {s === 'bearer' ? 'Authorization: Bearer' : 'x-api-key'}
-                </button>
-              ))}
-            </div>
-          </Field>
-        </div>
-
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={props.onRun}
-            disabled={props.running}
-            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {props.running ? 'Running preflight…' : 'Run preflight'}
-          </button>
-          <span className="text-xs text-zinc-600">
-            5 checks · no provider call · costs nothing
-          </span>
-        </div>
-
-        {props.error !== null && (
-          <p className="mt-3 rounded-md border border-rose-900/60 bg-rose-950/30 px-3 py-2 text-sm text-rose-300">
-            {props.error}
-          </p>
-        )}
-      </Card>
+      <TargetPicker
+        profiles={config.profiles}
+        keys={config.keys}
+        profileId={props.profileId}
+        keyAlias={props.keyAlias}
+        scheme={props.scheme}
+        onProfile={props.onProfile}
+        onKey={props.onKey}
+        onScheme={props.onScheme}
+        onTargetsChanged={props.onTargetsChanged}
+        onRun={props.onRun}
+        running={props.running}
+        runError={props.error}
+      />
 
       <Card
         title="Preflight"
@@ -215,7 +149,10 @@ export function Connect(props: ConnectProps) {
       )}
 
       {result?.metrics !== undefined && (
-        <Card title="Gateway metrics" subtitle="GET /api/v1/metrics — the gateway's in-process counters">
+        <Card
+          title="Gateway metrics"
+          subtitle="GET /api/v1/metrics — the gateway's in-process counters"
+        >
           <Json value={result.metrics} maxHeight={240} />
         </Card>
       )}

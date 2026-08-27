@@ -15,6 +15,18 @@ export interface Profile {
   baseUrl: string;
 }
 
+/**
+ * Where a target came from. `file` entries are declared in `.env.local` and
+ * survive a restart; `session` entries were typed into the console and live
+ * only in the backend's memory. The distinction is shown in the UI because
+ * losing a target on restart should never be a surprise.
+ */
+export type TargetSource = 'file' | 'session';
+
+export interface LabProfile extends Profile {
+  source: TargetSource;
+}
+
 export type KeyKind = 'api' | 'management' | 'admin';
 
 /** What the UI is allowed to know about a credential. Never the raw value. */
@@ -22,6 +34,10 @@ export interface KeyRef {
   alias: string;
   kind: KeyKind;
   masked: string;
+}
+
+export interface LabKeyRef extends KeyRef {
+  source: TargetSource;
 }
 
 /**

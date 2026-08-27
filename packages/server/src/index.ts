@@ -9,6 +9,7 @@
 import Fastify from 'fastify';
 
 import { loadConfig } from './config.js';
+import { TargetRegistry } from './registry.js';
 import { registerRoutes } from './routes.js';
 import { RunStore } from './store.js';
 
@@ -17,6 +18,7 @@ const HOST = '127.0.0.1';
 async function main(): Promise<void> {
   const config = loadConfig();
   const store = new RunStore(config.historyLimit);
+  const registry = new TargetRegistry(config);
 
   const app = Fastify({
     logger: {
@@ -29,7 +31,7 @@ async function main(): Promise<void> {
     bodyLimit: 8 * 1024 * 1024,
   });
 
-  registerRoutes(app, { config, store, startedAt: Date.now() });
+  registerRoutes(app, { config, registry, store, startedAt: Date.now() });
 
   try {
     await app.listen({ host: HOST, port: config.port });
