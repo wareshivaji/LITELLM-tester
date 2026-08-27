@@ -30,6 +30,17 @@ Then open **http://127.0.0.1:5173**.
 `npm run dev` builds the SDK, then runs the backend (`127.0.0.1:8787`) and the Vite dev server
 (`127.0.0.1:5173`) together. The UI talks only to the backend; Vite proxies `/api` across.
 
+### Stopping the lab
+
+Ctrl+C in the terminal usually does it. It does not always take the child processes with it —
+`tsx watch` and Vite both spawn one — so if a port is still held afterwards:
+
+```bash
+npx kill-port 8787 5173
+```
+
+That is the command to reach for whenever a restart complains the port is in use.
+
 ---
 
 ## What works today — Phase 1
@@ -50,6 +61,22 @@ and response inspector with the gateway's signal headers highlighted.
 
 Targets can be added straight from the console — see [Configuration](#configuration) — so pointing
 at a different gateway or trying a different key needs no file edit and no restart.
+
+## Phase 2 — Playground
+
+Send a real request to any of eight surfaces: chat completions, responses, Anthropic messages,
+text completions, embeddings, both token counters, moderations. The model picker is the key's own
+catalogue, and the **request body editor is the source of truth** — it is sent verbatim, with no
+validation or correction, because a client that quietly fixes a malformed request cannot be used
+to find out how the gateway answers one.
+
+**Probes** patch the body to ask one specific question each, and carry the answer measured against
+a live gateway. `⚠` marks behaviour believed wrong today. When a `⚠` probe starts passing,
+something got fixed — the same signal the Python suite gets from an XPASS.
+
+The result pane shows the extracted output, the error envelope that came back, the finish reason
+and token usage; below it the full exchange, and **copy as curl** for pasting into a bug report
+(the credential is emitted as `$TOKENSHIELD_KEY`, never the real or masked value).
 
 Phases 2–8 (Playground, streaming, vendor-SDK adapters, governance lab, MCP, scenarios) are in
 [`docs/PLAN.md`](docs/PLAN.md). The sidebar shows them greyed out with their phase number.
@@ -136,10 +163,10 @@ which auth header the next call will use. Same reason.
 ## Troubleshooting
 
 **`Port 8787 is already in use`** — `tsx watch` runs the server in a child process, so closing
-the terminal can leave that child holding the port. Clear it:
+the terminal can leave that child holding the port. Clear both ports:
 
 ```bash
-npx kill-port 8787
+npx kill-port 8787 5173
 ```
 
 On Windows, the direct route:
@@ -169,6 +196,11 @@ tiny budget and a short expiry.
 **Preflight passes but a later call fails right after you changed a policy** — the gateway caches
 API keys and credentials for 900s by default (`API_KEY_CACHE_TTL_SECONDS`,
 `CREDENTIAL_CACHE_TTL_SECONDS`). The change may simply not have landed yet.
+
+**The exchange log emptied on its own** — rebuilding the SDK (`npm run build:client`, or the watch
+task in `npm run dev`) rewrites `packages/client/dist`, which `tsx watch` sees as a change to an
+imported file and restarts the backend on. The history is in that process's memory, so it goes with
+it. Working as designed; just don't expect a log to survive an SDK edit.
 
 ---
 

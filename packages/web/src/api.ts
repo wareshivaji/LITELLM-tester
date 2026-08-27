@@ -5,8 +5,16 @@ import type {
   KeyKind,
   LabKeyRef,
   LabProfile,
+  ModelInfo,
   PreflightResult,
+  Verdict,
 } from '@tokenshield/client';
+
+export interface TargetRef {
+  profileId: string;
+  keyAlias: string | null;
+  scheme: AuthScheme;
+}
 
 export interface LabConfigResponse {
   profiles: LabProfile[];
@@ -66,8 +74,19 @@ export const api = {
   removeKey: (alias: string) =>
     json<void>(`/api/targets/keys/${encodeURIComponent(alias)}`, { method: 'DELETE' }),
 
-  preflight: (body: { profileId: string; keyAlias: string | null; scheme: AuthScheme }) =>
+  preflight: (body: TargetRef) =>
     json<PreflightResponse>('/api/preflight', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** Free — one GET /v1/models, filtered by the key's allowedModels. */
+  models: (body: TargetRef) =>
+    json<{ models: ModelInfo[]; exchangeId: string; verdict: Verdict }>('/api/models', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** The one call that spends money. Body is forwarded verbatim. */
+  callSurface: (body: TargetRef & { surfaceId: string; body: unknown }) =>
+    json<Exchange>('/api/exchange', { method: 'POST', body: JSON.stringify(body) }),
 
   runs: (limit = 50) => json<RunsResponse>(`/api/runs?limit=${limit}`),
 

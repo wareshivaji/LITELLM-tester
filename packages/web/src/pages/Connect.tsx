@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 
-import type { AuthScheme, ExchangeSummary } from '@tokenshield/client';
+import type { AuthScheme } from '@tokenshield/client';
 
 import type { LabConfigResponse, PreflightResponse } from '../api';
-import { ExchangeLog } from '../components/ExchangeLog';
 import { TargetPicker } from '../components/TargetPicker';
 import { Card, Empty, Json, StatusPill } from '../components/ui';
 
@@ -20,10 +19,6 @@ interface ConnectProps {
   running: boolean;
   result: PreflightResponse | null;
   error: string | null;
-  runs: ExchangeSummary[];
-  runsTotal: number;
-  runsCapacity: number;
-  onRefreshRuns: () => void;
 }
 
 export function Connect(props: ConnectProps) {
@@ -156,13 +151,6 @@ export function Connect(props: ConnectProps) {
           <Json value={result.metrics} maxHeight={240} />
         </Card>
       )}
-
-      <ExchangeLog
-        runs={props.runs}
-        total={props.runsTotal}
-        capacity={props.runsCapacity}
-        onRefresh={props.onRefreshRuns}
-      />
     </div>
   );
 }

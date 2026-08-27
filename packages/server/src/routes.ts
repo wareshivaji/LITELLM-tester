@@ -8,8 +8,8 @@
  * `Retry-After` or `x-tokenshield-guardrail-ms`. Those headers are the signal.
  */
 
-import { runPreflight, TokenShieldClient } from '@tokenshield/client';
-import type { AuthScheme, PreflightResult } from '@tokenshield/client';
+import { extractModels, runPreflight, surfaceById, TokenShieldClient } from '@tokenshield/client';
+import type { AuthScheme, PreflightResult, Profile } from '@tokenshield/client';
 import type { FastifyInstance } from 'fastify';
 
 import type { LabConfig } from './config.js';
@@ -18,10 +18,15 @@ import type { RunStore } from './store.js';
 
 const VALID_SCHEMES: readonly AuthScheme[] = ['bearer', 'x-api-key'];
 
-interface PreflightBody {
+interface TargetBody {
   profileId?: unknown;
   keyAlias?: unknown;
   scheme?: unknown;
+}
+
+interface ExchangeBody extends TargetBody {
+  surfaceId?: unknown;
+  body?: unknown;
 }
 
 interface AddProfileBody {
@@ -40,6 +45,13 @@ type PreflightResponse = Omit<PreflightResult, 'exchanges'> & {
   exchangeIds: string[];
 };
 
+interface ResolvedTarget {
+  profile: Profile;
+  keyAlias: string | null;
+  secret: string | null;
+  scheme: AuthScheme;
+}
+
 export interface RouteDeps {
   config: LabConfig;
   registry: TargetRegistry;
@@ -49,6 +61,42 @@ export interface RouteDeps {
 
 export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, registry, store } = deps;
+
+  /**
+   * Every call-making route resolves its target the same way, so a profile or
+   * alias that does not exist fails identically everywhere.
+   */
+  function resolveTarget(
+    body: TargetBody,
+  ): { ok: true; value: ResolvedTarget } | { ok: false; error: string } {
+    const profileId =
+      typeof body.profileId === 'string' ? body.profileId : config.defaultProfileId;
+    const profile = registry.profile(profileId);
+    if (profile === undefined) return { ok: false, error: `Unknown profile "${profileId}"` };
+
+    const keyAlias =
+      typeof body.keyAlias === 'string' && body.keyAlias.length > 0 ? body.keyAlias : null;
+    let secret: string | null = null;
+    if (keyAlias !== null) {
+      secret = registry.secretFor(keyAlias);
+      if (secret === null) return { ok: false, error: `Unknown key alias "${keyAlias}"` };
+    }
+
+    const requested = typeof body.scheme === 'string' ? (body.scheme as AuthScheme) : 'bearer';
+    const scheme: AuthScheme = VALID_SCHEMES.includes(requested) ? requested : 'bearer';
+
+    return { ok: true, value: { profile, keyAlias, secret, scheme: secret !== null ? scheme : 'none' } };
+  }
+
+  function clientFor(target: ResolvedTarget): TokenShieldClient {
+    return new TokenShieldClient({
+      profile: target.profile,
+      keyAlias: target.keyAlias,
+      secret: target.secret,
+      scheme: target.scheme,
+      timeoutMs: config.timeoutMs,
+    });
+  }
 
   app.get('/api/health', () => ({
     service: 'tokenshield-lab-server',
@@ -72,10 +120,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   // ── Session targets ────────────────────────────────────────────────────────
   //
-  // Typed into the console, held in memory, never written to disk. The request
-  // body of the key route carries a live credential; Fastify's logger records
-  // method and URL but not bodies, so nothing here needs redacting — but that
-  // is a property worth not breaking.
+  // Typed into the console, held in memory, never written to disk. The key
+  // route's request body carries a live credential; Fastify's logger records
+  // method and URL but not bodies, so nothing here leaks — a property worth
+  // not breaking.
 
   app.post<{ Body: AddProfileBody }>('/api/targets/profiles', (request, reply) => {
     const result = registry.addProfile(request.body ?? {});
@@ -94,12 +142,12 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.post<{ Body: AddKeyBody }>('/api/targets/keys', (request, reply) => {
     const result = registry.addKey(request.body ?? {});
     if (!result.ok) return reply.status(400).send({ error: result.error });
-    // Alias and mask only — the secret is never echoed, not even back to the
-    // caller that just supplied it.
-    app.log.info(`session key added: ${result.value.alias} (${result.value.kind}) ${result.value.masked}`);
-    return reply.status(201).send(
-      result.warning !== undefined ? { ...result.value, warning: result.warning } : result.value,
+    app.log.info(
+      `session key added: ${result.value.alias} (${result.value.kind}) ${result.value.masked}`,
     );
+    return reply
+      .status(201)
+      .send(result.warning !== undefined ? { ...result.value, warning: result.warning } : result.value);
   });
 
   app.delete<{ Params: { alias: string } }>('/api/targets/keys/:alias', (request, reply) => {
@@ -109,48 +157,77 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return reply.status(204).send();
   });
 
-  // ── Preflight ──────────────────────────────────────────────────────────────
+  // ── Calls ──────────────────────────────────────────────────────────────────
 
-  app.post<{ Body: PreflightBody }>('/api/preflight', async (request, reply) => {
-    const body = request.body ?? {};
+  app.post<{ Body: TargetBody }>('/api/preflight', async (request, reply) => {
+    const target = resolveTarget(request.body ?? {});
+    if (!target.ok) return reply.status(400).send({ error: target.error });
 
-    const profileId = typeof body.profileId === 'string' ? body.profileId : config.defaultProfileId;
-    const profile = registry.profile(profileId);
-    if (profile === undefined) {
-      return reply.status(400).send({ error: `Unknown profile "${profileId}"` });
-    }
-
-    const keyAlias =
-      typeof body.keyAlias === 'string' && body.keyAlias.length > 0 ? body.keyAlias : null;
-    let secret: string | null = null;
-    if (keyAlias !== null) {
-      secret = registry.secretFor(keyAlias);
-      if (secret === null) {
-        return reply.status(400).send({ error: `Unknown key alias "${keyAlias}"` });
-      }
-    }
-
-    const requested = typeof body.scheme === 'string' ? (body.scheme as AuthScheme) : 'bearer';
-    const scheme: AuthScheme = VALID_SCHEMES.includes(requested) ? requested : 'bearer';
-
-    const client = new TokenShieldClient({
-      profile,
-      keyAlias,
-      secret,
-      scheme: secret !== null ? scheme : 'none',
-      timeoutMs: config.timeoutMs,
-    });
-
-    const result = await runPreflight(client, { hasKey: secret !== null });
+    const client = clientFor(target.value);
+    const result = await runPreflight(client, { hasKey: target.value.secret !== null });
     store.addAll(result.exchanges);
 
     app.log.info(
-      `preflight ${profile.id} (${profile.baseUrl}) key=${keyAlias ?? 'none'} → ${result.ok ? 'ok' : 'FAILED'} in ${result.durationMs}ms`,
+      `preflight ${target.value.profile.id} (${target.value.profile.baseUrl}) key=${target.value.keyAlias ?? 'none'} → ${result.ok ? 'ok' : 'FAILED'} in ${result.durationMs}ms`,
     );
 
     const { exchanges, ...rest } = result;
     const response: PreflightResponse = { ...rest, exchangeIds: exchanges.map((e) => e.id) };
     return response;
+  });
+
+  /** The model catalogue on its own, for the Playground's picker. Free. */
+  app.post<{ Body: TargetBody }>('/api/models', async (request, reply) => {
+    const target = resolveTarget(request.body ?? {});
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+    if (target.value.secret === null) {
+      return reply.status(400).send({ error: 'A key is required to list the models it may use.' });
+    }
+
+    const exchange = await clientFor(target.value).listModels();
+    store.add(exchange);
+
+    if (exchange.verdict.kind !== 'ok') {
+      return reply
+        .status(200)
+        .send({ models: [], exchangeId: exchange.id, verdict: exchange.verdict });
+    }
+    return {
+      models: extractModels(exchange.response?.body),
+      exchangeId: exchange.id,
+      verdict: exchange.verdict,
+    };
+  });
+
+  /**
+   * One inference call. This is the route that spends money: everything above
+   * is free, and everything here reaches a provider unless the gateway rejects
+   * it first.
+   *
+   * The request body is forwarded verbatim. No validation, no normalisation —
+   * sending a deliberately malformed body is the entire point of the surface.
+   */
+  app.post<{ Body: ExchangeBody }>('/api/exchange', async (request, reply) => {
+    const raw = request.body ?? {};
+
+    const surfaceId = typeof raw.surfaceId === 'string' ? raw.surfaceId : '';
+    const surface = surfaceById(surfaceId);
+    if (surface === undefined) {
+      return reply.status(400).send({ error: `Unknown surface "${surfaceId}"` });
+    }
+
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const exchange = await clientFor(target.value).call(surface, raw.body);
+    store.add(exchange);
+
+    app.log.info(
+      `${surface.id} → ${exchange.response?.status ?? 'no response'} ${exchange.verdict.kind} ` +
+        `in ${exchange.timings.totalMs}ms (${target.value.profile.id}, key=${target.value.keyAlias ?? 'none'})`,
+    );
+
+    return exchange;
   });
 
   // ── History ────────────────────────────────────────────────────────────────

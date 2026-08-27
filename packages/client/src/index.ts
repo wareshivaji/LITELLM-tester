@@ -7,3 +7,8 @@ export type { SendRequest, TransportInit } from './transport.js';
 export { extractModels, TokenShieldClient } from './client.js';
 export { runPreflight } from './preflight.js';
 export type { PreflightOptions } from './preflight.js';
+export { readOutput, readUsage, SURFACES, surfaceById } from './surfaces.js';
+export type { SurfaceFamily, SurfaceOutput, SurfaceSpec, UsageSummary } from './surfaces.js';
+export { FLAT_ENVELOPE_SURFACE, PROBES, probesFor } from './probes.js';
+export type { Probe, ProbeExpectation } from './probes.js';
+export { toCurl } from './curl.js';

@@ -4,11 +4,13 @@ import type { AuthScheme, ExchangeSummary } from '@tokenshield/client';
 
 import { api } from './api';
 import type { LabConfigResponse, PreflightResponse } from './api';
+import { ExchangeLog } from './components/ExchangeLog';
 import { Connect } from './pages/Connect';
+import { Playground } from './pages/Playground';
 
 /**
- * The seven pages of the lab. Everything past Connect is a later phase —
- * shown, not hidden, so the shape of the tool is visible from day one.
+ * The seven pages of the lab. Everything past the current phase is shown, not
+ * hidden, so the shape of the tool is visible from day one.
  */
 const NAV: ReadonlyArray<{ id: string; label: string; phase: number }> = [
   { id: 'connect', label: 'Connect', phase: 1 },
@@ -20,11 +22,12 @@ const NAV: ReadonlyArray<{ id: string; label: string; phase: number }> = [
   { id: 'scenarios', label: 'Scenarios', phase: 7 },
 ];
 
-const CURRENT_PHASE = 1;
+const CURRENT_PHASE = 2;
 
 export function App() {
   const [config, setConfig] = useState<LabConfigResponse | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [page, setPage] = useState('connect');
 
   const [profileId, setProfileId] = useState('');
   const [keyAlias, setKeyAlias] = useState<string | null>(null);
@@ -60,7 +63,7 @@ export function App() {
    * Refetch after a session target was added or removed. Selection is
    * re-validated here rather than in the picker: removing the selected key
    * would otherwise leave the target strip naming something that no longer
-   * exists, and the next preflight would 400 on an alias the UI still shows.
+   * exists, and the next call would 400 on an alias the UI still shows.
    */
   const refreshConfig = useCallback(() => {
     api
@@ -139,13 +142,19 @@ export function App() {
         <nav className="flex-1 space-y-0.5 p-2">
           {NAV.map((item) => {
             const enabled = item.phase <= CURRENT_PHASE;
+            const active = enabled && item.id === page;
             return (
-              <div
+              <button
                 key={item.id}
-                className={`flex items-center justify-between rounded-md px-3 py-2 text-sm ${
-                  enabled
-                    ? 'bg-zinc-900 text-zinc-100'
-                    : 'cursor-not-allowed text-zinc-600'
+                type="button"
+                disabled={!enabled}
+                onClick={() => setPage(item.id)}
+                className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${
+                  active
+                    ? 'bg-zinc-800 text-zinc-100'
+                    : enabled
+                      ? 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
+                      : 'cursor-not-allowed text-zinc-600'
                 }`}
               >
                 <span>{item.label}</span>
@@ -154,7 +163,7 @@ export function App() {
                     P{item.phase}
                   </span>
                 )}
-              </div>
+              </button>
             );
           })}
         </nav>
@@ -190,24 +199,36 @@ export function App() {
           <span className="mono ml-auto text-zinc-600">{scheme}</span>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-auto p-6">
-          <Connect
-            config={config}
-            profileId={profileId}
-            keyAlias={keyAlias}
-            scheme={scheme}
-            onProfile={setProfileId}
-            onKey={setKeyAlias}
-            onScheme={setScheme}
-            onTargetsChanged={refreshConfig}
-            onRun={runPreflight}
-            running={running}
-            result={result}
-            error={error}
+        <main className="min-h-0 flex-1 space-y-5 overflow-auto p-6">
+          {page === 'playground' ? (
+            <Playground
+              profileId={profileId}
+              keyAlias={keyAlias}
+              scheme={scheme}
+              onRecorded={refreshRuns}
+            />
+          ) : (
+            <Connect
+              config={config}
+              profileId={profileId}
+              keyAlias={keyAlias}
+              scheme={scheme}
+              onProfile={setProfileId}
+              onKey={setKeyAlias}
+              onScheme={setScheme}
+              onTargetsChanged={refreshConfig}
+              onRun={runPreflight}
+              running={running}
+              result={result}
+              error={error}
+            />
+          )}
+
+          <ExchangeLog
             runs={runs}
-            runsTotal={runsTotal}
-            runsCapacity={runsCapacity}
-            onRefreshRuns={refreshRuns}
+            total={runsTotal}
+            capacity={runsCapacity}
+            onRefresh={refreshRuns}
           />
         </main>
       </div>

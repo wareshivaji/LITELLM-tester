@@ -10,6 +10,7 @@
  * transport underneath never changes.
  */
 
+import type { SurfaceSpec } from './surfaces.js';
 import { Transport } from './transport.js';
 import type { TransportInit } from './transport.js';
 import type { Exchange, ModelInfo } from './types.js';
@@ -69,6 +70,23 @@ export class TokenShieldClient {
       surface: 'models',
       method: 'GET',
       path: '/v1/models',
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
+  }
+
+  /**
+   * Send an arbitrary body to one of the inference surfaces.
+   *
+   * `body` is deliberately `unknown` and goes out untouched — no validation,
+   * no normalisation, no helpful coercion. A client library that "fixes" a
+   * malformed request cannot be used to find out how the gateway answers one.
+   */
+  call(surface: SurfaceSpec, body: unknown, timeoutMs?: number): Promise<Exchange> {
+    return this.transport.send({
+      surface: surface.id,
+      method: surface.method,
+      path: surface.path,
+      ...(surface.method === 'POST' ? { body } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     });
   }
