@@ -246,7 +246,7 @@ hardening.
 | 1 | Scaffold, SDK core, Connect page, preflight | **Done** | 18/18 | `3941513` |
 | 1.5 | UI-entered gateways and keys (session targets) | **Done** | 8/8 | `7bc86d6` |
 | 2 | Playground — 8 surfaces, probes, inspector, curl | **Done** | 17/17 | `d15d573` |
-| 3 | Streaming — SSE parser, relay, timeline, conformance | **Done** | 13/13 (+20 unit) | pending |
+| 3 | Streaming — SSE parser, relay, timeline, conformance | **Done** | 13/13 (+20 unit) | `4210c0c` |
 | 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | Not started | — | — |
 | 5 | Governance lab + key minting via management key | Not started | — | — |
 | 6 | Tools & MCP | Not started | — | — |
