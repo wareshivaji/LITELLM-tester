@@ -283,7 +283,7 @@ hardening.
 | 2 | Playground — 8 surfaces, probes, inspector, curl | **Done** | 17/17 | `d15d573` |
 | 3 | Streaming — SSE parser, relay, timeline, conformance | **Done** | 13/13 (+20 unit) | `4210c0c` |
 | 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | **Done** | 13/13 | `4e917d3` |
-| 5 | Governance lab + key minting via management key | **Built**, 4/11 verified | 4/11 | pending |
+| 5 | Governance lab + key minting via management key | **Built**, 5/11 concluded | 5/11 | pending |
 | 6 | Tools & MCP | Not started | — | — |
 | 7 | Scenario runner, Compare, report export | Not started | — | — |
 | 8 | Docs, ESLint, unit tests, BP checklist | Not started | — | — |
@@ -329,6 +329,16 @@ Recorded because they are the reason the tests exist.
 
 What the tool has established about TokenShield. Measured against **Prod US** on
 `bedrock-nova-micro` with a Bedrock-scoped key, on the dates given.
+
+### Governance (Phase 5)
+
+| Finding | Detail |
+|---|---|
+| **`/v1` is not rate limited unless a key or org sets an RPM explicitly** | 100 requests in **297 ms** all returned 200 on a key with no RPM configured. The chain: `DEFAULT_RATE_LIMIT_RPM` (documented as 60 in `.env.example`) is parsed into `cfg.DefaultRateLimitRPM` at `internal/config/config.go:241` and **read nowhere else**; the inference limiter is built as `ratelimit.NewLimiter(0)` (`cmd/gateway/main.go:461`); and `resolveLimit` returns 0 — treated as unlimited — when neither the key nor the org config carries a positive `RateLimitRPM`. The per-org `ratelimit.Middleware` is not mounted anywhere. The limiter works where a limit *is* set (a flat 429 with `retry_after_seconds` has been observed on other keys), so the defect is that the documented **default does not apply** — limiting is opt-in per key or org, which the env var name implies the opposite of |
+| The `allowedModels` gate applies on non-generating surfaces | `/v1/tokens/count` returns `403 model_not_allowed_for_key`, so the gate is not surface-specific — and token-count is therefore a free way to ask what a key may use |
+| Budget headers appear only where a budget exists | `CLIENT_SDK_TESTING` returns no `X-*-Budget-*` on **either** prod or local, so their absence is the key having no budget configured — not a local/prod difference. Budget-cap testing therefore needs a key with a cap, i.e. a minted one |
+| An infrastructure failure gets two different statuses | Mongo unreachable produced a **500 after 5000 ms** in one window and a **503 after 546 ms** in another, neither with a body explaining that this is transient infrastructure |
+| Two keys, two catalogues | `TOOL_CALLING_TEST_0` sees 29 models, `CLIENT_SDK_TESTING` sees 53. Same gateway, same org — the difference is the key's `allowedModels` |
 
 ### Operational (local run, 2026-08-28)
 

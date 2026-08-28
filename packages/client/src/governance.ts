@@ -46,12 +46,14 @@ export const GATES: readonly Gate[] = [
   {
     id: 'rate-limit',
     label: 'Rate limit (RPM)',
-    what: 'Caps requests per minute per key, and per org. Default 60.',
+    what: 'Caps requests per minute, per key or per org. **Opt-in, not defaulted** — see below.',
     how: 'Burst GET /v1/models until it refuses — that route runs the full middleware chain but calls no provider, so the burst is free.',
     expects: 'ratelimit',
     spends: false,
+    requires:
+      'An explicit RPM on the key or the org. Measured 2026-08-28: 100 requests in 297 ms all returned 200. `DEFAULT_RATE_LIMIT_RPM` (documented as 60) is parsed into config and then never read; the /v1 limiter is built with NewLimiter(0), and resolveLimit returns 0 — "unlimited" — unless a per-key or per-org value is set. So a key with no RPM configured is not rate limited at all.',
     caution:
-      'The limiter is real and shared. Tripping it consumes this key’s minute-window, so anything else using the same key will be refused until the window rolls.',
+      'Where a limit IS configured, it is real and shared: tripping it consumes that key’s minute-window, so anything else using the same key is refused until the window rolls.',
   },
   {
     id: 'key-budget',
