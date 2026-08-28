@@ -9,16 +9,22 @@
  */
 
 import {
+  CROSS_PROVIDER_PROBES,
   extractModels,
   isStreamable,
+  readCreatedKey,
+  redactMintedKey,
   runPreflight,
   runWithSdk,
   sdkModesFor,
+  summariseMintedKey,
   surfaceById,
   TokenShieldClient,
 } from '@tokenshield/client';
 import type {
   AuthScheme,
+  CreateApiKeyRequest,
+  Exchange,
   PreflightResult,
   Profile,
   SdkMode,
@@ -46,6 +52,19 @@ interface ExchangeBody extends TargetBody {
 interface CompareBody extends ExchangeBody {
   modes?: unknown;
   maxRetries?: unknown;
+}
+
+interface MintBody extends TargetBody {
+  managementAlias?: unknown;
+  request?: unknown;
+}
+
+interface BurstBody extends TargetBody {
+  count?: unknown;
+}
+
+interface ProbeBody extends TargetBody {
+  models?: unknown;
 }
 
 interface AddProfileBody {
@@ -394,6 +413,224 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     );
 
     return { surfaceId: surface.id, outcomes };
+  });
+
+  // ── Governance ─────────────────────────────────────────────────────────────
+
+  /**
+   * Mint a disposable `cg-ak-` key with a management key.
+   *
+   * The gateway's response body carries the raw new key — the only response in
+   * this tool that does. It is extracted, registered as a session credential,
+   * and then **scrubbed out of the recorded Exchange** before that reaches the
+   * store, so it never appears in the log, the inspector, or an export. The
+   * browser gets an alias and a mask.
+   */
+  app.post<{ Body: MintBody }>('/api/keys/mint', async (request, reply) => {
+    const raw = request.body ?? {};
+
+    const managementAlias = typeof raw.managementAlias === 'string' ? raw.managementAlias : '';
+    const managementRef = registry.keyRefs().find((k) => k.alias === managementAlias);
+    if (managementRef === undefined || managementRef.kind !== 'management') {
+      return reply
+        .status(400)
+        .send({ error: 'Pick a management key (cg-mk-). Add one as TSLAB_MGMT_<ALIAS> or in the console.' });
+    }
+    const managementSecret = registry.secretFor(managementAlias);
+    if (managementSecret === null) {
+      return reply.status(400).send({ error: `Unknown management key "${managementAlias}"` });
+    }
+
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const spec = raw.request;
+    if (typeof spec !== 'object' || spec === null) {
+      return reply.status(400).send({ error: 'A key specification is required.' });
+    }
+    const keyRequest = spec as CreateApiKeyRequest;
+    if (typeof keyRequest.name !== 'string' || keyRequest.name.trim().length === 0) {
+      return reply.status(400).send({ error: 'The key needs a name.' });
+    }
+
+    const exchange = await clientFor(target.value).createApiKey(keyRequest, managementSecret);
+    const created = readCreatedKey(exchange.response?.body);
+
+    // Redact BEFORE storing, always — including on the failure path, where a
+    // partial body might still carry something.
+    const safe = created !== undefined ? redactMintedKey(exchange, created.api_key) : exchange;
+    store.add(safe);
+
+    if (created === undefined) {
+      app.log.info(`mint failed: ${safe.verdict.kind} — ${safe.verdict.detail}`);
+      return reply.status(200).send({
+        ok: false,
+        verdict: safe.verdict,
+        status: safe.response?.status ?? null,
+        exchangeId: safe.id,
+      });
+    }
+
+    // A unique alias, derived from the name the operator chose.
+    const base =
+      keyRequest.name
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48) || 'MINTED';
+    let alias = base;
+    for (let n = 2; registry.keyRefs().some((k) => k.alias === alias); n++) alias = `${base}_${n}`;
+
+    const added = registry.addKey({ alias, secret: created.api_key, kind: 'api' });
+    if (!added.ok) return reply.status(500).send({ error: added.error });
+
+    app.log.info(`minted ${alias} (${added.value.masked}) via ${managementAlias}`);
+    return reply.status(201).send({
+      ok: true,
+      key: summariseMintedKey(alias, created, keyRequest.name),
+      exchangeId: safe.id,
+    });
+  });
+
+  /**
+   * Burst until the rate limiter refuses.
+   *
+   * `GET /v1/models` runs the whole middleware chain — auth, ip allowlist, rate
+   * limit — but calls no provider, so a hundred of them cost nothing. That is
+   * the only reason this is safe to offer as a button.
+   *
+   * Attempts are deliberately NOT all stored: a hundred rows would evict the
+   * entire ring buffer and lose whatever the operator was actually looking at.
+   * The first attempt and the rejected one are kept; the rest are counted.
+   */
+  app.post<{ Body: BurstBody }>('/api/governance/burst', async (request, reply) => {
+    const raw = request.body ?? {};
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+    if (target.value.secret === null) {
+      return reply.status(400).send({ error: 'A key is required — the limiter is per key.' });
+    }
+
+    const requested = typeof raw.count === 'number' ? Math.floor(raw.count) : 80;
+    const count = Math.min(Math.max(requested, 1), 150);
+
+    const client = clientFor(target.value);
+    const statuses: number[] = [];
+    let firstRejectedAt: number | null = null;
+    let rejected: Exchange | undefined;
+    let first: Exchange | undefined;
+    let abandoned: string | null = null;
+    let consecutiveBroken = 0;
+    const startedAt = Date.now();
+
+    for (let i = 0; i < count; i++) {
+      const exchange = await client.listModels(15_000);
+      if (i === 0) first = exchange;
+      const status = exchange.response?.status ?? 0;
+      statuses.push(status);
+
+      if (exchange.verdict.kind === 'ratelimit' || status === 429) {
+        firstRejectedAt = i + 1;
+        rejected = exchange;
+        break;
+      }
+
+      // Give up early if the gateway is answering with something that is
+      // neither success nor a rate-limit. A gateway whose auth store is
+      // unreachable answers 500 after a five-second timeout, so a blind
+      // hundred-request burst spends eight minutes learning nothing. Three in a
+      // row is enough to conclude the limiter is not what we are measuring.
+      if (status === 200) {
+        consecutiveBroken = 0;
+      } else {
+        consecutiveBroken++;
+        if (consecutiveBroken >= 3) {
+          abandoned =
+            `Stopped after ${i + 1} requests: ${consecutiveBroken} consecutive ${status} responses. ` +
+            `The limiter cannot be measured while the gateway is answering ${exchange.verdict.kind}.`;
+          rejected = exchange;
+          break;
+        }
+      }
+    }
+
+    if (first !== undefined) store.add(first);
+    if (rejected !== undefined) store.add(rejected);
+
+    app.log.info(
+      `burst ${statuses.length} request(s) on ${target.value.keyAlias ?? 'none'} → ` +
+        (abandoned !== null
+          ? 'abandoned'
+          : firstRejectedAt === null
+            ? 'never refused'
+            : `refused at #${firstRejectedAt}`),
+    );
+
+    return {
+      attempted: statuses.length,
+      requested: count,
+      abandoned,
+      firstRejectedAt,
+      elapsedMs: Date.now() - startedAt,
+      statuses,
+      verdict: rejected?.verdict ?? null,
+      retryAfterSeconds: rejected?.gateway.retryAfterSeconds ?? null,
+      rejectedExchangeId: rejected?.id ?? null,
+      firstExchangeId: first?.id ?? null,
+    };
+  });
+
+  /**
+   * Which models is this key refused, and how?
+   *
+   * Probes with `POST /v1/tokens/count`, not a completion: it takes a model and
+   * generates nothing, so the probe is free whichever way it lands. The
+   * distinction being hunted is 404 (the gateway has never heard of the model)
+   * versus 403 model_not_allowed_for_key (it routes the model but this key may
+   * not use it) — only the second exercises the gate. A 200 on a model absent
+   * from the key's catalogue would itself be a finding: a gate not applied on
+   * that surface.
+   */
+  app.post<{ Body: ProbeBody }>('/api/governance/probe-models', async (request, reply) => {
+    const raw = request.body ?? {};
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const candidates = Array.isArray(raw.models)
+      ? raw.models.filter((m): m is string => typeof m === 'string').slice(0, 12)
+      : [...CROSS_PROVIDER_PROBES];
+
+    const surface = surfaceById('tokens.count');
+    if (surface === undefined) return reply.status(500).send({ error: 'tokens.count surface missing' });
+
+    const client = clientFor(target.value);
+    const results: Array<{
+      model: string;
+      status: number | null;
+      verdict: string;
+      code?: string;
+      detail: string;
+      exchangeId: string;
+    }> = [];
+
+    for (const model of candidates) {
+      const exchange = await client.call(surface, {
+        model,
+        messages: [{ role: 'user', content: 'x' }],
+      });
+      store.add(exchange);
+      results.push({
+        model,
+        status: exchange.response?.status ?? null,
+        verdict: exchange.verdict.kind,
+        ...(exchange.verdict.code !== undefined ? { code: exchange.verdict.code } : {}),
+        detail: exchange.verdict.detail,
+        exchangeId: exchange.id,
+      });
+    }
+
+    return { results };
   });
 
   // ── History ────────────────────────────────────────────────────────────────

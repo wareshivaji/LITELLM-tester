@@ -10,6 +10,7 @@
  * transport underneath never changes.
  */
 
+import type { CreateApiKeyRequest } from './management.js';
 import type { SurfaceSpec } from './surfaces.js';
 import { Transport } from './transport.js';
 import type { TransportInit } from './transport.js';
@@ -88,6 +89,25 @@ export class TokenShieldClient {
       path: surface.path,
       ...(surface.method === 'POST' ? { body } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
+  }
+
+  /**
+   * `POST /api/v1/management/api-keys` — mint a new `cg-ak-` key.
+   *
+   * Authenticated with a management key rather than the client's own
+   * credential, so the secret is overridden per call. The response body
+   * contains the raw new key: the caller MUST pass the returned Exchange
+   * through `redactMintedKey` before it goes anywhere near storage.
+   */
+  createApiKey(request: CreateApiKeyRequest, managementSecret: string): Promise<Exchange> {
+    return this.transport.send({
+      surface: 'management.create-key',
+      method: 'POST',
+      path: '/api/v1/management/api-keys',
+      body: request,
+      auth: 'x-management-key',
+      secret: managementSecret,
     });
   }
 

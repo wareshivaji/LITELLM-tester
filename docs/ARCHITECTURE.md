@@ -232,6 +232,26 @@ posture is to be unreachable rather than to grow an auth system.
 safe way from the client side to distinguish "the model is thinking" from "the connection is dead".
 A per-read timeout would need a guess at an acceptable inter-token gap.
 
+### AD-20 · A minted key is scrubbed from its own recorded exchange
+**Why.** `POST /api/v1/management/api-keys` is the only response in this tool whose body contains a
+live credential — the gateway shows the new key once and never again. Recorded naively it would sit
+in the exchange log, the inspector and every export of them. So the mint route extracts the key,
+registers it in the in-memory registry, and runs the Exchange through `redactMintedKey` **before**
+it reaches the store. The browser receives an alias and a mask, never the value. The scrub runs on
+the failure path too, where a partial body might still carry something.
+
+### AD-21 · The rate-limit burst uses a free endpoint, and gives up early
+**Why (free).** `GET /v1/models` runs the whole middleware chain — auth, ip allowlist, rate limit —
+but calls no provider. That is the only reason bursting eighty requests is safe to offer as a
+button.
+**Why (early abort).** Found by the first real run: a gateway whose auth store is unreachable
+answers 500 after a five-second timeout, so a blind eighty-request burst spent 400 seconds learning
+nothing. Three consecutive non-200, non-429 responses now abandon the burst and say so, because a
+limiter cannot be measured while the gateway is broken in some other way.
+**Also.** Attempts are deliberately not all stored — eighty rows would evict the entire ring buffer
+and lose whatever the operator was looking at. The first and the rejected one are kept, the rest
+counted.
+
 ### AD-19 · Vendor SDKs are driven through a recording `fetch`, not reimplemented
 **Why.** The point of Phase 4 is what a *real customer's SDK* does, so the SDKs are the stock
 published versions and nothing rewrites the requests they build. A `fetch` handed to their
@@ -263,7 +283,7 @@ hardening.
 | 2 | Playground — 8 surfaces, probes, inspector, curl | **Done** | 17/17 | `d15d573` |
 | 3 | Streaming — SSE parser, relay, timeline, conformance | **Done** | 13/13 (+20 unit) | `4210c0c` |
 | 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | **Done** | 13/13 | `4e917d3` |
-| 5 | Governance lab + key minting via management key | Not started | — | — |
+| 5 | Governance lab + key minting via management key | **Built**, 4/11 verified | 4/11 | pending |
 | 6 | Tools & MCP | Not started | — | — |
 | 7 | Scenario runner, Compare, report export | Not started | — | — |
 | 8 | Docs, ESLint, unit tests, BP checklist | Not started | — | — |
@@ -310,6 +330,14 @@ Recorded because they are the reason the tests exist.
 What the tool has established about TokenShield. Measured against **Prod US** on
 `bedrock-nova-micro` with a Bedrock-scoped key, on the dates given.
 
+### Operational (local run, 2026-08-28)
+
+| Finding | Detail |
+|---|---|
+| An unreachable auth store presents as a slow opaque 500 | With MongoDB unreachable, every `/v1/*` call returned **500 after exactly 5000 ms**. Not a 503, no `Retry-After`, nothing telling a client this is transient infrastructure rather than their request |
+| The gateway logs "MongoDB connected" immediately after a failed ping | `MongoDB ping failed, will retry on first query` is followed on the next line by `MongoDB connected`. Reading the startup log, it looks healthy |
+| The model catalogue silently falls back | `model catalog: failed to load from MongoDB, using fallback` — the gateway then serves a catalogue that may not match the org's |
+
 ### Landmine status
 
 | # | Landmine | Status | Evidence |
@@ -350,6 +378,8 @@ Stock `openai@4.104.0` and `@anthropic-ai/sdk@0.32.1`, unmodified.
 | The OpenAI SDK parses the gateway's Responses payload | No divergence between raw and SDK on `/v1/responses`. Good news |
 | Clients agree on the happy path | chat, embeddings and Responses: identical status, identical output, raw vs SDK |
 | A 404 is correctly not retried | `maxRetries=2` on an unknown model still makes exactly 1 attempt |
+| `code` is inconsistent across surfaces for the same error | An unroutable model gives `code: model_not_found` on `/v1/chat/completions` but `code: "unknown model: <name>"` on `/v1/tokens/count`. A client keying on `code` breaks depending on which surface it called |
+| The `allowedModels` gate applies on non-generating surfaces | `/v1/tokens/count` returns `403 model_not_allowed_for_key` for 6 of 8 cross-provider ids, so the gate is not surface-specific. That also makes it a free way to ask what a key may use |
 | Headers real customer traffic carries | Both SDKs add 8 `x-stainless-*` headers (arch, lang, os, package-version, retry-count, runtime, runtime-version, timeout); Anthropic also sends `anthropic-version`. Anything gateway-side that keys off headers sees these in production |
 
 ---

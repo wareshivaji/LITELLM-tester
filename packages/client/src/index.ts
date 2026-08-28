@@ -31,3 +31,17 @@ export {
   sdkModesFor,
 } from './adapters.js';
 export type { AdapterInit, SdkFailure, SdkMode, SdkOutcome } from './adapters.js';
+export {
+  BUDGET_PERIODS,
+  readCreatedKey,
+  redactMintedKey,
+  summariseMintedKey,
+} from './management.js';
+export type {
+  BudgetPeriod,
+  CreateApiKeyRequest,
+  CreatedApiKey,
+  MintedKeySummary,
+} from './management.js';
+export { CROSS_PROVIDER_PROBES, GATES, gateById } from './governance.js';
+export type { Gate } from './governance.js';

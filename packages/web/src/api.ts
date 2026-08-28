@@ -8,6 +8,7 @@ import type {
   LabProfile,
   ModelInfo,
   PreflightResult,
+  MintedKeySummary,
   SdkMode,
   SdkOutcome,
   StreamChunk,
@@ -32,6 +33,39 @@ export interface LabConfigResponse {
 
 /** Preflight minus the exchange bodies — the log fetches those on demand. */
 export type PreflightResponse = Omit<PreflightResult, 'exchanges'> & { exchangeIds: string[] };
+
+export interface MintResult {
+  ok: boolean;
+  key?: MintedKeySummary;
+  verdict?: Verdict;
+  status?: number | null;
+  exchangeId: string;
+}
+
+export interface BurstResult {
+  attempted: number;
+  requested: number;
+  /** Set when the burst gave up because the gateway was broken, not limiting. */
+  abandoned: string | null;
+  firstRejectedAt: number | null;
+  elapsedMs: number;
+  statuses: number[];
+  verdict: Verdict | null;
+  retryAfterSeconds: number | null;
+  rejectedExchangeId: string | null;
+  firstExchangeId: string | null;
+}
+
+export interface ProbeResult {
+  results: Array<{
+    model: string;
+    status: number | null;
+    verdict: string;
+    code?: string;
+    detail: string;
+    exchangeId: string;
+  }>;
+}
 
 export interface RunsResponse {
   total: number;
@@ -167,6 +201,21 @@ export const api = {
     },
   ) =>
     json<{ surfaceId: string; outcomes: SdkOutcome[] }>('/api/compare', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Mints a cg-ak- key. The raw value stays in the backend; this returns a mask. */
+  mintKey: (body: TargetRef & { managementAlias: string; request: unknown }) =>
+    json<MintResult>('/api/keys/mint', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** Bursts GET /v1/models until the limiter refuses. Free — no provider call. */
+  burst: (body: TargetRef & { count: number }) =>
+    json<BurstResult>('/api/governance/burst', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** Probes model permission with the non-generating token counter. Free. */
+  probeModels: (body: TargetRef & { models?: string[] }) =>
+    json<ProbeResult>('/api/governance/probe-models', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
