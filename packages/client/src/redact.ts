@@ -146,6 +146,42 @@ export function redactBody(value: unknown): unknown {
 }
 
 /**
+ * Which credential-bearing headers arrived somewhere, and whether any carries a
+ * **CloudGov gateway key**.
+ *
+ * Built for the lab's own MCP server, to answer the leak LiteLLM's
+ * troubleshooting guide warns about: a proxy forwarding its own API key to a
+ * third-party MCP server instead of a scoped token. Any `cg-ak-`/`cg-mk-` value
+ * reaching a third party is wrong regardless of which key it is, so this checks
+ * the **shape** rather than comparing against a known secret — that way it
+ * catches a key the lab has never seen.
+ *
+ * Returns names and a verdict, never a value. Reporting "a gateway key arrived,
+ * in the authorization header" is fully actionable; handing back the key is not
+ * a requirement of saying so.
+ */
+export function summariseCredentialExposure(headers: Record<string, string>): {
+  credentialHeaders: string[];
+  gatewayKeyLeaked: boolean;
+  leakedVia: string[];
+} {
+  const credentialHeaders: string[] = [];
+  const leakedVia: string[] = [];
+
+  for (const [name, value] of Object.entries(headers)) {
+    const lower = name.toLowerCase();
+    if (isSecretHeader(lower)) credentialHeaders.push(lower);
+    if (/cg-(ak|mk)-/.test(value ?? '')) leakedVia.push(lower);
+  }
+
+  return {
+    credentialHeaders: [...new Set(credentialHeaders)].sort(),
+    gatewayKeyLeaked: leakedVia.length > 0,
+    leakedVia: [...new Set(leakedVia)].sort(),
+  };
+}
+
+/**
  * Last line of defence: strips any known secret that leaked into free text
  * (an echoed request body, a provider error quoting the header, a stack trace).
  */

@@ -1,4 +1,4 @@
-import { isSecretBodyKey, isSecretHeader, maskSecret, redactBody, redactHeaders, scrubText } from '../dist/index.js';
+import { isSecretBodyKey, isSecretHeader, maskSecret, redactBody, redactHeaders, scrubText, summariseCredentialExposure } from '../dist/index.js';
 import { createSuite } from './_harness.mjs';
 
 const { check, truthy, done } = createSuite('redaction');
@@ -202,5 +202,57 @@ truthy('isSecretBodyKey covers header names too', isSecretBodyKey('x-mcp-authori
 truthy('and body-only names', isSecretBodyKey('client_secret'));
 check('but not ordinary fields', isSecretBodyKey('max_tokens'), false);
 check('nor a similarly-spelled field', isSecretBodyKey('max_completion_tokens'), false);
+
+// ── credential exposure at a third party ────────────────────────────────────
+// LiteLLM's troubleshooting guide warns that a proxy can forward its OWN api
+// key to an MCP server instead of a scoped token. The lab's mock MCP server
+// answers that question, and this is the logic behind the answer.
+
+const leaked = summariseCredentialExposure({
+  authorization: 'Bearer cg-ak-SOMEKEYVALUE0123456789',
+  'x-mcp-books-authorization': 'Bearer scoped-token-fine',
+  'content-type': 'application/json',
+});
+
+check('a gateway key reaching a third party is detected', leaked.gatewayKeyLeaked, true);
+check('and the header it arrived in is named', leaked.leakedVia, ['authorization']);
+check(
+  'credential-bearing headers are listed, ordinary ones are not',
+  leaked.credentialHeaders,
+  ['authorization', 'x-mcp-books-authorization'],
+);
+
+// The point of the whole design: report the finding, never the value.
+truthy(
+  'no part of the key appears in the result',
+  !JSON.stringify(leaked).includes('SOMEKEYVALUE'),
+);
+
+check(
+  'a scoped token that is not a gateway key is NOT reported as a leak',
+  summariseCredentialExposure({ 'x-mcp-books-authorization': 'Bearer opaque-third-party' })
+    .gatewayKeyLeaked,
+  false,
+);
+
+// Shape check, not a value comparison — so it catches a key the lab has never
+// been told about, which is the only way this is useful in the field.
+check(
+  'a management key is caught too',
+  summariseCredentialExposure({ 'x-api-key': 'cg-mk-NEVERSEENBEFORE123' }).gatewayKeyLeaked,
+  true,
+);
+
+check(
+  'a key hiding in a non-credential header is still caught',
+  summariseCredentialExposure({ 'x-custom-debug': 'token=cg-ak-SNEAKY123456' }).leakedVia,
+  ['x-custom-debug'],
+);
+
+check(
+  'nothing to report on a clean request',
+  summariseCredentialExposure({ 'content-type': 'application/json' }),
+  { credentialHeaders: [], gatewayKeyLeaked: false, leakedVia: [] },
+);
 
 done();

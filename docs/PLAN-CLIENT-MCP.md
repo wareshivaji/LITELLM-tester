@@ -60,11 +60,16 @@ none of the eight. A client using the OpenAI SDK's streaming parser sees an unre
 drops it — so brokered tool work becomes invisible, not wrong-looking. Verified against the SDK
 types; unverified only in that the gateway side has not been re-read on this branch.
 
-**`/v1/chat/completions` has no MCP tool type.** Its tool union is `type: 'function'` and nothing
-else (`node_modules/openai/resources/chat/completions/completions.d.ts`). This is the single most
-important structural fact in the plan: on chat completions there is **no OpenAI-legal way for a
-client to declare an MCP server**. The only conformant design is for the gateway to advertise MCP
-tools as ordinary `function` tools and broker them transparently — which is the LiteLLM approach.
+**CORRECTED 2026-08-31 — `/v1/chat/completions` and MCP.** I originally wrote that chat completions
+has no MCP tool type, so transparent brokering was the only conformant design there. That was read
+off the `openai` SDK's tool union, where the only type is `function`, and it is right about
+*OpenAI's own* API and **wrong about LiteLLM**, which is the reference we follow.
+
+Per <https://docs.litellm.ai/docs/mcp>, LiteLLM accepts a `{"type": "mcp"}` block in `tools` on
+`/chat/completions`, and with `require_approval: "never"` it *"automatically executes the returned
+tool calls and feeds the results back into the model before returning the assistant response"*. So
+the declaration is explicit **and** the brokering is transparent — both, not either. Track 1 is
+rewritten below accordingly. Full contract in [LITELLM_CONTRACT.md](LITELLM_CONTRACT.md).
 
 **Still not verifiable here:** LiteLLM itself is not installed, so anything LiteLLM-specific stays
 `reference: 'litellm'` and flagged. But note that the two references largely coincide: LiteLLM's
@@ -128,11 +133,39 @@ read as evidence about the OpenAI path.
 
 ---
 
+## 5b. The lab runs its own MCP server
+
+**Added 2026-08-31, on the instruction not to depend on the AI gateway.**
+
+Every test above was blocked on someone else supplying an org with a configured MCP server. That
+made the feature this lab exists to test the one feature it could not test, and it meant every
+expectation was ultimately measured against the gateway — which can only ever confirm the gateway
+does what it does.
+
+`packages/server/src/mockMcp.ts` serves JSON-RPC at `http://127.0.0.1:8787/mock-mcp`: `initialize`
+(assigning `Mcp-Session-Id`), `tools/list`, `tools/call`, with two tools and switchable
+`failCalls` / `failList` / `hang` modes. It is the **instrument**, not the subject — it records
+exactly what reaches it.
+
+What it now answers without any cooperating environment:
+
+| Question | How |
+|---|---|
+| Single or double underscore in aggregated tool names | Register `lab_weather`, read back what the gateway advertises |
+| Does the customer's gateway key leak to a third-party MCP server | Every inbound header is recorded and shape-checked for `cg-ak-`/`cg-mk-` |
+| Does `x-mcp-{alias}-{header}` arrive, and under what name | Recorded header names |
+| What a gateway does with a failing or hanging MCP server | Flip a mode and observe |
+| Whether the tool actually ran | Its canned answer is deliberately absurd — *"raining upward at 3 degrees"*. If that string reaches the model's reply, the tool ran |
+
+The leak check reports the **finding, never the value**: names and a verdict, with the key itself
+absent from the output. Detection is by shape, not by comparison against a known secret, so it
+catches a key the lab has never been told about. Nine unit tests cover it.
+
 ## 6. What I need before running
 
 | Blocker | Blocks | Why |
 |---|---|---|
-| An org/key with a working MCP server | 1.1, 1.3, 1.4, 1.6, 2.2–2.6, 3.5 | `/v1/mcp/servers` returns `[]` on both keys here. Without one there is no tool to broker |
+| ~~An org/key with a working MCP server~~ | — | **No longer a blocker.** The lab runs its own — see §5b |
 | Local gateway started | everything | Currently stopped. Starting it writes real spend to the shared prod stores, so that is your call |
 | Approval to spend | the `spends: yes` rows | Cheapest model, `max_tokens` capped. 1.2/1.5/2.1/2.7 and all of Track 3 are free |
 

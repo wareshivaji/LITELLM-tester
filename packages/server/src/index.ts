@@ -9,6 +9,7 @@
 import Fastify from 'fastify';
 
 import { loadConfig } from './config.js';
+import { MockMcpServer, registerMockMcp } from './mockMcp.js';
 import { TargetRegistry } from './registry.js';
 import { registerRoutes } from './routes.js';
 import { RunStore } from './store.js';
@@ -32,6 +33,12 @@ async function main(): Promise<void> {
   });
 
   registerRoutes(app, { config, registry, store, startedAt: Date.now() });
+
+  // The lab runs its own MCP server. Without it, every MCP test depended on
+  // someone else providing a configured org, which made the feature the lab
+  // exists to test the one feature it could not test. It is the instrument, not
+  // the subject: it records exactly what reaches it.
+  registerMockMcp(app, new MockMcpServer());
 
   try {
     await app.listen({ host: HOST, port: config.port });

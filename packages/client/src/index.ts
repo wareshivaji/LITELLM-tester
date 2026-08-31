@@ -8,6 +8,7 @@ export {
   redactBody,
   redactHeaders,
   scrubText,
+  summariseCredentialExposure,
 } from './redact.js';
 export { LAB_USER_AGENT, Transport } from './transport.js';
 export type { SendRequest, TransportInit } from './transport.js';
