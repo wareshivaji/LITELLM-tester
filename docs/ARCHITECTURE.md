@@ -304,7 +304,7 @@ hardening.
 | 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | **Done** | 13/13 | `4e917d3` |
 | 5 | Governance lab + key minting via management key | **Built**, 5/11 concluded | 5/11 | pending |
 | 6 | Tools & MCP | **Done** | 8/8 | `ad5bddd` |
-| 7 | Scenario runner, Compare, report export | **Done** | 8/8 | pending |
+| 7 | Scenario runner, Compare, report export | **Done** | 8/8 | `2a5a92d` |
 | 8 | Docs, ESLint, unit tests, BP checklist | Not started | — | — |
 
 **Working agreement.** One phase at a time: build, stop, wait for "start next". Test cases are
