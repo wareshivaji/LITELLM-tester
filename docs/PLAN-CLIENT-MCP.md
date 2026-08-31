@@ -1,6 +1,7 @@
 # Plan — test MCP the way a client would declare it
 
-**Status: proposed, awaiting approval. Nothing here has been run.**
+**Status: approved. Redaction gap fixed; free slice attempted and blocked on the gateway's auth
+store. Track 1/2 rows are built but unrun — they need a model call.**
 
 Scope, as set 2026-08-31: **`/v1/chat/completions`, `/v1/responses`, and the MCP support surface.**
 Nothing else.
@@ -80,19 +81,35 @@ reference anyway.
 
 ## 3. Track 1 — `/v1/chat/completions`
 
-The premise: a client here can only ever send `function` tools. Everything MCP must be invisible or
-expressed as a function.
+Rewritten after the correction in §2. A client following LiteLLM has **two** ways to reach MCP
+here, and both need testing:
 
-| # | Test | Reference | Expectation | Spends | Needs a server |
-|---|---|---|---|---|---|
-| 1.1 | Send only `messages`, no `tools`, on a key with MCP entitlement | `litellm` | Either MCP tools are brokered transparently, or they are absent — but the reply must stay a legal chat completion either way | yes | yes |
-| 1.2 | Inspect every `tool_calls[].type` the gateway ever emits | `openai` | Always `"function"`. Any other value breaks the client's discriminated union at parse time | yes | no |
-| 1.3 | Client declares its own `function` tools while holding MCP entitlement | `openai` | Client tools are handed back for the client to execute, never silently executed by the gateway | yes | yes |
-| 1.4 | One turn containing both a client tool call and an MCP tool call | `openai` | Both are represented; the turn completes. **Prod-confirmed deadlock here** — expected `not-implemented` | yes | yes |
-| 1.5 | Streamed `tool_calls` deltas | `openai` | Each delta carries `index` — required to reassemble parallel calls. **Known missing** — expected `not-implemented` | yes | no |
-| 1.6 | A blocked-by-policy tool that the client calls anyway | `cloudgov` | The refusal is an OpenAI-shaped error, **not** the flat `{"error":"string"}` envelope the guardrail path uses | yes | yes |
+- **declared** — an explicit `{"type": "mcp"}` block in `tools`, which LiteLLM accepts on this
+  endpoint even though OpenAI's own API does not; and
+- **transparent** — the gateway brokering entitled tools with no client declaration at all.
 
-1.2 and 1.5 are runnable now. The rest need an MCP server.
+The response, in both cases, must stay a legal chat completion: whatever the gateway does with MCP
+internally, a client parsing `choices[].message` must not need to know MCP exists.
+
+| # | Test | Reference | Expectation | Spends |
+|---|---|---|---|---|
+| 1.1 | `tools: [{type:'mcp', server_url, server_label, require_approval:'never'}]` pointing at the lab's own MCP server | `litellm` | Accepted, the tool runs, and the reply contains the mock's canned answer. Rejecting a documented LiteLLM tool block is a compatibility break | yes |
+| 1.2 | The same, with `require_approval` omitted | `litellm` | Defined behaviour either way — the point is that it does not 500 |  yes |
+| 1.3 | Every `tool_calls[].type` the gateway emits | `openai` | Always `"function"`. Any other value breaks a client's discriminated union at parse time | yes |
+| 1.4 | Client declares its own `function` tools alongside an MCP block | `openai` | Client tools handed back for the client to run; MCP tools brokered. Neither swallows the other | yes |
+| 1.5 | One turn with both a client tool call and an MCP tool call | `openai` | Both represented, turn completes. **Prod-confirmed deadlock** — expect `not-implemented` | yes |
+| 1.6 | Streamed `tool_calls` deltas | `openai` | Each delta carries `index`, needed to reassemble parallel calls. **Known missing** — expect `not-implemented` | yes |
+| 1.7 | Aggregated tool name as advertised to the client | `litellm` | `{server}_{tool}` — one underscore. TokenShield's comment says two; the mock settles which is emitted | yes |
+| 1.8 | Does the customer's `cg-ak-` key reach the MCP server | `litellm` | **No.** The mock records every header; LiteLLM's guide warns about exactly this leak | yes |
+| 1.9 | MCP server returns an error (`failCalls` mode) | `measured` | Undocumented upstream, so recorded rather than asserted — but it must not present as a client error | yes |
+| 1.10 | A blocked-by-policy tool the client calls anyway | `cloudgov` | The refusal is OpenAI-shaped, **not** the flat `{"error":"string"}` the guardrail path uses | yes |
+
+**No row here needs anyone else's MCP server any more** — 1.1, 1.2, 1.4, 1.7, 1.8 and 1.9 all point
+at the lab's own (§5b). They do spend, because a real model call is what makes the gateway run the
+tool. 1.3 and 1.6 spend for the same reason.
+
+1.7 and 1.8 are the two most valuable rows in the plan: one is a silent parsing break for every
+client, the other is a credential leak.
 
 ## 4. Track 2 — `/v1/responses`
 
