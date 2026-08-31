@@ -411,7 +411,9 @@ function ResultTable({ rows }: { rows: ScenarioResult[] }) {
                             ? 'Compatibility target, from documented LiteLLM behaviour — not verified against a local LiteLLM here'
                             : row.reference === 'measured'
                               ? 'Only what this gateway was observed doing. Cannot tell you the behaviour is correct'
-                              : 'A published contract'
+                              : row.reference === 'cloudgov'
+                                ? 'CloudGov-specific, no external equivalent. Asserts only that the client-visible format is unaffected'
+                                : 'A published contract'
                         }
                       >
                         {row.reference}

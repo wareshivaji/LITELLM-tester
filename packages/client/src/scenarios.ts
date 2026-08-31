@@ -58,6 +58,24 @@ export type ExpectationSource =
    * confirmed against a real LiteLLM before being treated as authoritative.
    */
   | 'litellm'
+  /**
+   * A CloudGov-specific feature with no external equivalent — per-key tool
+   * blocking is the example. LiteLLM has no such concept, so there is no
+   * outside contract to measure it against and inventing one would be worse
+   * than admitting that.
+   *
+   * What *is* testable from the client side is the compatibility invariant:
+   * enforcing the policy must not change the shape of what a client sends or
+   * parses. On the advertising path that holds by construction — a blocked
+   * tool is not listed, so the client never calls it and the wire is
+   * untouched. The exception is a client that calls a blocked tool anyway,
+   * from a stale tool list or by declaring the name itself: that refusal *is*
+   * client-visible, and its envelope is a real contract question.
+   *
+   * Everything else about the policy is gateway-side accounting, which is
+   * monitored on the gateway rather than asserted from here.
+   */
+  | 'cloudgov'
   /** Only what this gateway was observed doing. Weakest form. */
   | 'measured';
 

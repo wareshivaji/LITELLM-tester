@@ -261,6 +261,15 @@ whether the gateway is wrong or whether **we** assumed something. So every scena
 `reference` — `openai`, `mcp-spec`, `litellm` or `measured` — and it is printed on the row and in
 the exported report.
 
+There is also `cloudgov`, for a feature with no external equivalent at all. Per-key tool blocking is
+the case that forced it: LiteLLM has no such concept, so there is nothing outside to measure it
+against, and a `litellm` expectation there would have been an invented reference. The only thing
+assertable from the client side is the compatibility invariant — enforcing the policy must not
+change the shape of what a client sends or parses. That holds by construction on the advertising
+path, since a blocked tool is not listed and so is never called. It stops holding for a client that
+calls a blocked tool anyway, from a stale list or by declaring the name itself, and that refusal's
+envelope is a real contract question. The rest is gateway-side accounting, monitored on the gateway.
+
 `measured` is the deliberate default, because it is the **weakest** claim: it records only that the
 gateway did this once, and cannot establish that the behaviour is correct. A `measured` expectation
 that starts failing means something *changed*, not necessarily that something broke. Defaulting to

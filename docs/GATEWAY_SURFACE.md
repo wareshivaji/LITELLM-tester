@@ -201,6 +201,23 @@ therefore written against external references, and each scenario names which one
 | MCP specification | JSON-RPC framing on `POST /v1/mcp`: `tools/list` returns `result.tools[]`; an unknown method returns an `error` object with a numeric `code`, not an HTTP failure; under Streamable HTTP a server that wants a session assigns `Mcp-Session-Id` and the client echoes it |
 | OpenAI Responses API | Tool continuation: the documented form sends the prior turn's items back in `input[]` keyed by `call_id`, alongside the user turn in the shorthand `{role, content}` form |
 
+**No external reference exists — `reference: 'cloudgov'`:**
+
+Per-key tool blocking has **no LiteLLM equivalent**, so there is no outside contract to measure it
+against, and writing one would mean inventing a reference. Decided 2026-08-31: it is not compared
+to LiteLLM at all.
+
+What is testable from the client side is a narrower thing — the **compatibility invariant**:
+enforcing the policy must not change the shape of what a client sends or parses. The request format
+is the plain OpenAI wire format either way; what varies is which tools the gateway runs and what it
+records, and that accounting is monitored on the gateway rather than asserted from here.
+
+On the **advertising path** the invariant holds by construction: a blocked tool is not listed, the
+client never calls it, and nothing about the wire changes. The **one exception** is a client that
+calls a blocked tool anyway — from a stale tool list, or by declaring the name itself. That refusal
+*is* client-visible, so its envelope is a genuine contract question, and it is the third open point
+below.
+
 **Not verified here — needs confirmation before it is treated as authoritative:**
 
 LiteLLM is the stated compatibility target (`tokenshield-compat-tests` measures "what an
@@ -208,12 +225,18 @@ OpenAI/LiteLLM client expects"), but **no LiteLLM source or package is installed
 `litellm` is not importable and there is no local checkout. Anything marked `reference: 'litellm'`
 is therefore from documented behaviour rather than from something checked, and is flagged as such in
 the UI tooltip and the report legend. No scenario currently relies on a LiteLLM-specific claim: the
-four MCP scenarios are all `mcp-spec`, and the Responses pair is `openai`. Specific points that
-would need a real LiteLLM to settle:
+four MCP scenarios are all `mcp-spec`, and the Responses pair is `openai`.
+
+The remaining open points are the ones that can change **what a client sends or parses** — the only
+category where a LiteLLM difference would actually reach a customer:
 
 - whether aggregated tool names are namespaced, and with what separator
 - whether `x-mcp-servers` is the scoping header and how an unknown server name is treated
-- whether an MCP tool failure surfaces as a tool result carrying an error or as a request failure
+- whether calling a blocked or failing MCP tool surfaces as a tool result carrying an error, or as
+  a request failure — the client-visible half of per-key tool policy
+
+Each needs an org with a working MCP server to settle; `/v1/mcp/servers` returns an empty list on
+the keys available here.
 
 ---
 
