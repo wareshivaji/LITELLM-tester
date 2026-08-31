@@ -305,7 +305,10 @@ hardening.
 | 5 | Governance lab + key minting via management key | **Done** | 11/11 | `36122d3` + follow-up |
 | 6 | Tools & MCP | **Done** | 8/8 | `ad5bddd` |
 | 7 | Scenario runner, Compare, report export | **Done** | 8/8 | `2a5a92d` |
-| 8 | Docs, ESLint, unit tests, BP checklist | **Done** | 87 unit tests | pending |
+| 8 | Docs, ESLint, unit tests, BP checklist | **Done** | 87 unit tests | `3dfe327` |
+
+**All eight phases complete.** Verified end to end from a clean clone: `npm install` → `npm run
+build` → `npm run typecheck` (0 errors) → `eslint .` (exit 0) → `npm test` (87 passed).
 
 **Working agreement.** One phase at a time: build, stop, wait for "start next". Test cases are
 presented for approval **before** they run. Nothing is pushed without an explicit decision on where.
@@ -352,6 +355,7 @@ Recorded because they are the reason the tests exist.
 | 3 | An aborted stream lost its `X-Request-ID` | capture headers when they arrive, keep them on the error path |
 | 5 | The rate-limit burst had no early abort — 80 × 5 s of timeouts | AD-21 — abandon after 3 consecutive non-200/non-429 |
 | 7 | Landmines on an unreachable target reported as `landmine-changed` — reads as "maybe fixed" when nothing was measured | AD-22 — new `inconclusive` outcome |
+| 8 | Used a **real API key** as the fixture in `redact.test.mjs` and committed it | Caught by the clean-clone check, which is why that check exists. One commit, one file, zero remotes — it never left the machine. Replaced with an obviously-fake key of the same shape and the commit amended so it never existed in history |
 | 6 | Flagged missing `index` on **buffered** tool calls as a conformance failure | False positive: `index` exists only on streaming deltas, never on `tool_calls[]` in a buffered response. Check removed from `tools.ts`; the real one stays in `stream.ts` |
 
 ---
