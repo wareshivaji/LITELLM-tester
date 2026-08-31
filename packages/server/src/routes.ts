@@ -13,11 +13,14 @@ import {
   extractModels,
   isStreamable,
   readCreatedKey,
+  readMcpServers,
+  readMcpTools,
   redactMintedKey,
   runPreflight,
   runWithSdk,
   sdkModesFor,
   evaluateScenario,
+  extractResponsesToolCalls,
   extractToolCalls,
   looksSwallowed,
   readOutput,
@@ -89,6 +92,10 @@ interface ToolLoopBody extends TargetBody {
   prompt?: unknown;
   tools?: unknown;
   toolChoice?: unknown;
+  /** 'chat.completions' (default) or 'responses'. */
+  surfaceId?: unknown;
+  /** Send the other surface's tool shape on purpose. */
+  wrongToolShape?: unknown;
 }
 
 type McpBody = TargetBody;
@@ -709,8 +716,24 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       .filter((p): p is NonNullable<typeof p> => p !== undefined);
     if (presets.length === 0) return reply.status(400).send({ error: 'Pick at least one tool.' });
 
-    const surface = surfaceById('chat.completions');
-    if (surface === undefined) return reply.status(500).send({ error: 'chat surface missing' });
+    // Which surface, and therefore which tool shape. The gateway reads client
+    // tool names from a different place on each: nested under `function` for
+    // chat, top level for Responses. A client that reuses a chat definition on
+    // /v1/responses declares a tool whose name the gateway cannot see, so the
+    // shape is chosen per surface rather than assumed.
+    const surfaceId = raw.surfaceId === 'responses' ? 'responses' : 'chat.completions';
+    const onResponses = surfaceId === 'responses';
+    const surface = surfaceById(surfaceId);
+    if (surface === undefined) {
+      return reply.status(500).send({ error: surfaceId + ' surface missing' });
+    }
+
+    // Sending the WRONG shape on purpose is a supported test: it is a realistic
+    // client mistake and the gateway's behaviour for it is worth knowing.
+    const useWrongShape = raw.wrongToolShape === true;
+    const toolDefs = presets.map((preset) =>
+      onResponses === useWrongShape ? preset.definition : preset.responsesDefinition,
+    );
 
     const prompt =
       typeof raw.prompt === 'string' && raw.prompt.length > 0
@@ -718,12 +741,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         : 'What is the weather in Paris?';
 
     const messages: unknown[] = [{ role: 'user', content: prompt }];
-    const body: Record<string, unknown> = {
-      model,
-      messages,
-      max_tokens: 256,
-      tools: presets.map((p) => p.definition),
-    };
+    const body: Record<string, unknown> = onResponses
+      ? { model, input: prompt, max_output_tokens: 256, tools: toolDefs }
+      : { model, messages, max_tokens: 256, tools: toolDefs };
     if (typeof raw.toolChoice === 'string' && raw.toolChoice !== 'auto') {
       // A named choice is `{type:'function',function:{name}}`; 'none'/'required'
       // are bare strings. Passed through exactly as a client would send them.
@@ -739,9 +759,13 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
     const first = await client.call(surface, body);
     store.add(first);
-    turns.push(summariseTurn(1, 'request', first, readOutput('chat.completions', first.response?.body).text));
+    turns.push(
+      summariseTurn(1, 'request', first, readOutput(surfaceId, first.response?.body).text, surfaceId),
+    );
 
-    const calls = extractToolCalls(first.response?.body);
+    const calls = onResponses
+      ? extractResponsesToolCalls(first.response?.body)
+      : extractToolCalls(first.response?.body);
     const executed: Array<{ name: string; result: unknown }> = [];
 
     if (calls.length > 0) {
@@ -757,29 +781,78 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         }
         return undefined;
       })();
-      if (assistantMessage !== undefined) messages.push(assistantMessage);
+      if (!onResponses && assistantMessage !== undefined) messages.push(assistantMessage);
 
       for (const call of calls) {
         const preset = toolPresetById(call.name);
         const result = preset !== undefined ? preset.run(call.argumentsParsed) : { error: `no local implementation for ${call.name}` };
         executed.push({ name: call.name, result });
-        messages.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          content: JSON.stringify(result),
-        });
+        if (!onResponses) {
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            content: JSON.stringify(result),
+          });
+        }
       }
 
-      const followUp: Record<string, unknown> = {
-        model,
-        messages,
-        max_tokens: 256,
-        tools: presets.map((p) => p.definition),
-      };
+      // Responses carries the conversation as `input[]` items - the call and
+      // its output as separate entries keyed by call_id - not as chat messages.
+      // Echo the gateway's OWN output items back verbatim, then append the
+      // results — which is what a real client does, and what the chat path
+      // already does with the assistant message.
+      //
+      // Rebuilding the function_call item by hand instead dropped the `id` and
+      // `status` the gateway had assigned, and the continuation was refused.
+      // Reconstructing a payload the server just sent you is a way of testing
+      // your own guess rather than the gateway.
+      const priorOutput = ((): unknown[] => {
+        const b = first.response?.body;
+        if (typeof b !== 'object' || b === null) return [];
+        const out = (b as { output?: unknown }).output;
+        return Array.isArray(out) ? out : [];
+      })();
+
+      const followUp: Record<string, unknown> = onResponses
+        ? {
+            model,
+            input: [
+              // The EXPLICIT message form, not the shorthand `{role, content}`.
+              //
+              // Measured 2026-08-31: the shorthand is accepted when it is the
+              // only input item, and silently dropped once the input also
+              // carries tool items — after which the gateway sees the
+              // conversation starting with a `function_call` and answers "A
+              // conversation must start with a user message", which is exactly
+              // what the request did contain. Using the explicit form is the
+              // workaround; the scenario `responses-shorthand-continuation`
+              // keeps the bug itself under test.
+              {
+                type: 'message',
+                role: 'user',
+                content: [{ type: 'input_text', text: prompt }],
+              },
+              ...priorOutput,
+              ...calls.map((c, i) => ({
+                type: 'function_call_output',
+                call_id: c.id,
+                output: JSON.stringify(executed[i]?.result ?? {}),
+              })),
+            ],
+            max_output_tokens: 256,
+            tools: toolDefs,
+          }
+        : { model, messages, max_tokens: 256, tools: toolDefs };
       const second = await client.call(surface, followUp);
       store.add(second);
       turns.push(
-        summariseTurn(2, 'tool-results', second, readOutput('chat.completions', second.response?.body).text),
+        summariseTurn(
+          2,
+          'tool-results',
+          second,
+          readOutput(surfaceId, second.response?.body).text,
+          surfaceId,
+        ),
       );
     }
 
@@ -787,11 +860,14 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     const swallowed = calls.length === 0 && looksSwallowed(finalText, offered);
 
     app.log.info(
-      `tool loop ${model} tools=[${offered.join(',')}] → ${calls.length} call(s), ${turns.length} turn(s)` +
+      `tool loop ${surfaceId} ${model} tools=[${offered.join(',')}] → ${calls.length} call(s), ${turns.length} turn(s)` +
+        (useWrongShape ? ' [wrong tool shape]' : '') +
         (swallowed ? ' — SWALLOWED' : ''),
     );
 
     return {
+      surfaceId,
+      wrongToolShape: useWrongShape,
       turns,
       offered,
       executed,
@@ -815,16 +891,41 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       servers: {
         status: servers.response?.status ?? null,
         verdict: servers.verdict,
+        parsed: readMcpServers(servers.response?.body),
         body: servers.response?.body ?? null,
         exchangeId: servers.id,
       },
       tools: {
         status: tools.response?.status ?? null,
         verdict: tools.verdict,
+        parsed: readMcpTools(tools.response?.body),
         body: tools.response?.body ?? null,
         exchangeId: tools.id,
       },
     };
+  });
+
+  /**
+   * Probe one registered server with its stored credential, server-side.
+   *
+   * The browser never sends the secret: the gateway holds it and dials out
+   * itself. That also makes this the only honest answer to "is this server
+   * actually reachable?", as opposed to "does the gateway list it", which it
+   * will do either way.
+   */
+  app.post<{ Body: McpCallBody }>('/api/mcp/test', async (request, reply) => {
+    const raw = request.body ?? {};
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const server = typeof raw.server === 'string' ? raw.server : '';
+    if (server.length === 0) {
+      return reply.status(400).send({ error: 'A server id or name is required.' });
+    }
+
+    const exchange = await clientFor(target.value).mcpTestServer(server);
+    store.add(exchange);
+    return exchange;
   });
 
   /** Invoke one MCP tool directly, with no model in the loop. */
@@ -872,7 +973,9 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
         why: sc.why,
         surface: sc.surface,
         spends: sc.spends,
+        reference: sc.reference ?? 'measured',
         ...(sc.landmine !== undefined ? { landmine: sc.landmine } : {}),
+        ...(sc.notImplemented !== undefined ? { notImplemented: sc.notImplemented } : {}),
       })),
     })),
   );

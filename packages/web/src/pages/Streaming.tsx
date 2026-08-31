@@ -239,6 +239,49 @@ export function Streaming(props: StreamingProps) {
           </Card>
         )}
 
+        {analysis.mcpCalls.length > 0 && (
+          <Card
+            title="Tools the gateway ran for you"
+            subtitle="mcp_tool_call frames — the only client-visible account of brokered work"
+          >
+            <div className="overflow-hidden rounded-md border border-zinc-800">
+              <table className="w-full text-left text-[11px]">
+                <thead className="bg-zinc-900/80 text-[10px] uppercase tracking-wider text-zinc-500">
+                  <tr>
+                    <th className="px-2 py-1.5 font-medium">Tool</th>
+                    <th className="px-2 py-1.5 font-medium">Server</th>
+                    <th className="px-2 py-1.5 font-medium">Status</th>
+                    <th className="px-2 py-1.5 text-right font-medium">ms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analysis.mcpCalls.map((c, i) => (
+                    <tr key={`${c.server}-${c.tool}-${i}`} className="border-t border-zinc-800/60">
+                      <td className="mono px-2 py-1 text-sky-300">{c.tool}</td>
+                      <td className="px-2 py-1 text-zinc-400">{c.server}</td>
+                      <td
+                        className={`mono px-2 py-1 ${
+                          c.status === 'error'
+                            ? 'text-rose-300'
+                            : c.status === 'running'
+                              ? 'text-amber-300'
+                              : 'text-zinc-300'
+                        }`}
+                      >
+                        {c.status}
+                        {c.status === 'running' && ' (never completed)'}
+                      </td>
+                      <td className="mono px-2 py-1 text-right text-zinc-500">
+                        {c.durationMs ?? '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+
         {chunks.length > 0 && <ChunkTimeline surfaceId={composer.surface.id} chunks={chunks} />}
 
         {exchange !== null && (

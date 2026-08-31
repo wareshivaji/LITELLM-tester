@@ -9,7 +9,9 @@ cd ~/Cloudgov/tokenshield-client-sdk
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173**. Stop it with `npx kill-port 8787 5173`.
+Open **http://127.0.0.1:5173**. Stop it with **Ctrl+C in that terminal** — not `kill-port`.
+`npm run dev` runs `concurrently`, which supervises `tsx watch` and `vite`: kill the process
+holding a port and the supervisor immediately starts a replacement.
 
 Two things are true on every page:
 
@@ -86,6 +88,11 @@ shape.
    still billed.
 6. Switch to *Messages (Anthropic)* and stream. Watch for a `200` followed by an `event: error`
    frame — a success status carrying a failure.
+7. If the gateway ran MCP tools for you mid-stream, a **Tools the gateway ran for you** panel
+   appears, built from `mcp_tool_call` frames — the only client-visible account of work the gateway
+   brokered on your behalf. A call that starts and never finishes shows as
+   `running (never completed)` rather than being dropped, because silently omitting it would report
+   a hung tool as no tool at all.
 
 ---
 
@@ -154,7 +161,16 @@ the whole conversation.
 3. Set **tool_choice** to *force get_time* while asking about the weather. It should call only
    `get_time`. It calls **both** — naming a tool does not restrict to it.
 4. Set it to `none` (prose, no calls) and `required` (a call is forced even for "Say hello").
-5. Press **List servers & tools**. If you get `{"servers":[]}`, note that this endpoint cannot
+5. **Switch the surface to `/v1/responses`** and run the loop again. Same conversation, different
+   shapes at every step: the tool is declared flat instead of nested under `function`, the call
+   comes back as a `function_call` item inside `output[]`, and the continuation goes back as
+   `input[]` items keyed by `call_id`. Tick **send the other surface's tool shape** to make the
+   realistic client mistake on purpose — reusing a chat tool definition on Responses.
+6. Press **List servers & tools**. If any exist you get a policy count per tool — `allow` / `block`,
+   with `ask` highlighted if present, because the gateway still advertises that value for a state
+   its enforcement model no longer has. Each server gets a **test reachability** button, which is
+   the only honest answer to "is this server up?" as distinct from "does the gateway list it",
+   which it will do either way. If you get `{"servers":[]}`, note that this endpoint cannot
    distinguish "none configured" from "discovery failed" — both look like an empty list.
 
 ---
@@ -185,8 +201,23 @@ doing what it did last week?".
 | `FAIL` | Did not — investigate |
 | `landmine` | A known defect, still present. Expected |
 | `CHANGED` | A known defect stopped behaving that way. Probably fixed — go look |
+| `not yet` | A feature still being built. The expectation states the *target*, so this is the expected state — and when such a row turns `pass`, the feature landed |
 | `blocked` | The target refused the request outright. Nothing was measured |
 | `error` | No response at all |
+
+Every row also carries a small **reference** chip saying where its expectation came from, because
+that is the difference between "the gateway is wrong" and "we assumed something":
+
+| Chip | Means |
+|---|---|
+| `openai` | OpenAI's published behaviour — the contract clients are actually written against |
+| `mcp-spec` | The MCP specification: handshake order, JSON-RPC result shapes |
+| `litellm` | The compatibility target. **Not** verified against a local LiteLLM here — documented behaviour, pending confirmation |
+| `measured` | Only what this gateway was observed doing once. It cannot tell you that behaviour is *correct*, so a `measured` row that starts failing means something *changed* |
+
+The **MCP** suite is written entirely against `mcp-spec`, not against what the gateway currently
+does, because that implementation is still landing. A `not yet` row there is the expected state and
+is not a defect.
 
 ---
 

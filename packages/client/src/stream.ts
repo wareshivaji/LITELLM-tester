@@ -12,6 +12,8 @@
  * and all of which a strict client will trip over.
  */
 
+import { summariseMcpCalls } from './mcp.js';
+import type { McpCallSummary } from './mcp.js';
 import { readUsage } from './surfaces.js';
 import type { UsageSummary } from './surfaces.js';
 import type { StreamChunk } from './types.js';
@@ -101,6 +103,14 @@ export interface StreamAnalysis {
   usage?: UsageSummary;
   sawDone: boolean;
   anomalies: StreamAnomaly[];
+  /**
+   * Tools the gateway ran for you mid-stream, paired into one row each.
+   *
+   * Empty for a stream with no MCP involvement. When it is not empty it is the
+   * only client-visible account of work the gateway did on your behalf — a
+   * caller otherwise sees a long pause and then an answer.
+   */
+  mcpCalls: McpCallSummary[];
 }
 
 /** Per-frame conformance checks for the OpenAI chat stream shape. */
@@ -217,6 +227,7 @@ export function analyseStream(
       gaps.length > 0 ? Math.round((gaps.reduce((a, b) => a + b, 0) / gaps.length) * 100) / 100 : 0,
     sawDone,
     anomalies,
+    mcpCalls: summariseMcpCalls(chunks),
   };
 
   const first = arrivals[0];

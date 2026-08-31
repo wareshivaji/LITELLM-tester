@@ -37,6 +37,30 @@ export interface Expectation {
   bodyPath?: Record<string, unknown>;
 }
 
+/**
+ * Where an expectation comes from — which is the difference between "the
+ * gateway is wrong" and "we assumed something".
+ *
+ * `measured` is the weakest: it only says the gateway did this once. It cannot
+ * tell you the behaviour is *correct*, so a `measured` expectation that starts
+ * failing means something changed, not necessarily that something broke.
+ */
+export type ExpectationSource =
+  /** OpenAI's published API behaviour — the contract clients are written to. */
+  | 'openai'
+  /** The MCP specification itself: handshake order, JSON-RPC result shapes. */
+  | 'mcp-spec'
+  /**
+   * LiteLLM, the compatibility target this gateway is measured against.
+   *
+   * NOT verified against a local LiteLLM source or package — neither is
+   * installed here — so these are from documented behaviour and should be
+   * confirmed against a real LiteLLM before being treated as authoritative.
+   */
+  | 'litellm'
+  /** Only what this gateway was observed doing. Weakest form. */
+  | 'measured';
+
 export interface Scenario {
   id: string;
   title: string;
@@ -45,11 +69,27 @@ export interface Scenario {
   surface: string;
   body: (ctx: ScenarioContext) => unknown;
   expect: Expectation;
+  /** Where the expectation comes from. Defaults to `measured`. */
+  reference?: ExpectationSource;
   /**
-   * Present when the expectation describes a known defect. The identifier is
-   * for cross-referencing with the findings ledger.
+   * Present when the expectation describes a known defect in finished code.
+   * The identifier cross-references the findings ledger.
    */
   landmine?: string;
+  /**
+   * Present when the expectation describes behaviour the gateway is **not
+   * finished implementing**, so the expectation states the TARGET rather than
+   * the defect.
+   *
+   * Deliberately not a landmine. A landmine says "this code is done and wrong",
+   * which reads as a regression and belongs in a bug report. Unfinished work is
+   * a different thing: reporting it as a failure makes an in-progress feature
+   * look broken, and reporting it as a landmine makes it look like a defect
+   * somebody introduced. It gets its own outcome so a suite can be read
+   * honestly while the work is still landing — and when it starts passing, the
+   * feature arrived and this marker should come off.
+   */
+  notImplemented?: string;
   /** Whether running it reaches a provider. */
   spends: boolean;
   /** Send with no credential, whatever the selected key is. */
@@ -201,6 +241,94 @@ export const SUITES: readonly Suite[] = [
         expect: { status: 200, verdict: 'ok', bodyPath: { 'data.0.embedding.0': true } },
       },
       {
+        id: 'responses-shorthand-continuation',
+        title: 'Responses drops a shorthand user turn once tool items are present',
+        why: "OpenAI's documented tool-continuation uses the shorthand `{role, content}` input item. The gateway accepts it alone, drops it when tool items follow, and then reports \"must start with a user message\" about a request that starts with one. Any client following the documented pattern hits this, and the error sends them looking for something that is already there.",
+        surface: 'responses',
+        body: (ctx) => ({
+          model: ctx.model,
+          max_output_tokens: 64,
+          input: [
+            { role: 'user', content: 'What is the weather in Paris?' },
+            {
+              type: 'function_call',
+              call_id: 'call_scenario_1',
+              name: 'get_weather',
+              arguments: '{"city":"Paris"}',
+            },
+            {
+              type: 'function_call_output',
+              call_id: 'call_scenario_1',
+              output: '{"temperature_c":21}',
+            },
+          ],
+          tools: [
+            {
+              type: 'function',
+              name: 'get_weather',
+              description: 'Get the current temperature for a city.',
+              parameters: {
+                type: 'object',
+                properties: { city: { type: 'string' } },
+                required: ['city'],
+              },
+            },
+          ],
+        }),
+        reference: 'openai',
+        notImplemented:
+          'The gateway accepts the shorthand item alone but drops it once tool items follow, then reports "must start with a user message" about a request that starts with one. Workaround: the explicit message item, which the paired scenario below proves works.',
+        spends: false,
+        // The expectation states what OpenAI does, not what the gateway does.
+        // While the MCP/Responses work is unfinished this reports
+        // `not-implemented` rather than a failure; when it turns `pass`, the
+        // shorthand form is being honoured and this marker comes off.
+        expect: { status: 200, verdict: 'ok' },
+      },
+      {
+        id: 'responses-explicit-continuation',
+        title: 'The same continuation with an explicit message item is accepted',
+        why: 'The other half of the pair, and the workaround. Proves the tool items are fine and the shorthand user turn is what gets dropped — without it, the failure above looks like a problem with the tool items.',
+        reference: 'openai',
+        surface: 'responses',
+        body: (ctx) => ({
+          model: ctx.model,
+          max_output_tokens: 64,
+          input: [
+            {
+              type: 'message',
+              role: 'user',
+              content: [{ type: 'input_text', text: 'What is the weather in Paris?' }],
+            },
+            {
+              type: 'function_call',
+              call_id: 'call_scenario_2',
+              name: 'get_weather',
+              arguments: '{"city":"Paris"}',
+            },
+            {
+              type: 'function_call_output',
+              call_id: 'call_scenario_2',
+              output: '{"temperature_c":21}',
+            },
+          ],
+          tools: [
+            {
+              type: 'function',
+              name: 'get_weather',
+              description: 'Get the current temperature for a city.',
+              parameters: {
+                type: 'object',
+                properties: { city: { type: 'string' } },
+                required: ['city'],
+              },
+            },
+          ],
+        }),
+        spends: true,
+        expect: { status: 200, verdict: 'ok' },
+      },
+      {
         id: 'token-count',
         title: 'Gateway token counter answers without generating',
         why: 'Undocumented, and useful precisely because it costs nothing.',
@@ -208,6 +336,56 @@ export const SUITES: readonly Suite[] = [
         body: (ctx) => chat(ctx),
         spends: false,
         expect: { status: 200, verdict: 'ok', bodyPath: { input_tokens: true } },
+      },
+    ],
+  },
+  {
+    id: 'mcp',
+    title: 'MCP',
+    description:
+      'The MCP surface, measured against the MCP specification rather than against what this gateway currently does — the implementation is still landing, so a `not-implemented` row here is the expected state and not a defect. All free. Per-tool policy and x-mcp-servers scoping need at least one configured server and are not asserted here.',
+    scenarios: [
+      {
+        id: 'mcp-tools-list-shape',
+        title: 'tools/list answers a JSON-RPC result with a tools array',
+        why: 'The shape every off-the-shelf MCP client reads. An empty array is a valid answer; a missing `result.tools` is not, because a client cannot tell "no tools" from "malformed reply".',
+        surface: 'mcp.aggregate',
+        body: () => ({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+        reference: 'mcp-spec',
+        spends: false,
+        expect: { status: 200, bodyPath: { 'result.tools': true } },
+      },
+      {
+        id: 'mcp-session-id',
+        title: 'The Streamable HTTP endpoint assigns an Mcp-Session-Id',
+        why: 'Under the MCP Streamable HTTP transport a server that wants a session assigns the id and the client echoes it on later requests. Measured 2026-08-31 no such header came back, so a client cannot hold a session across calls — every request starts cold.',
+        surface: 'mcp.aggregate',
+        body: () => ({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+        reference: 'mcp-spec',
+        notImplemented:
+          'No Mcp-Session-Id was returned. Session continuity across MCP calls is not available to a client yet.',
+        spends: false,
+        expect: { status: 200, headers: ['mcp-session-id'] },
+      },
+      {
+        id: 'mcp-servers-listing',
+        title: 'The server listing is a well-formed envelope',
+        why: 'A console or an agent needs to enumerate entitlement before doing anything else. An empty list is fine; a missing `servers` key is not.',
+        surface: 'mcp.servers',
+        body: () => ({}),
+        reference: 'measured',
+        spends: false,
+        expect: { status: 200, bodyPath: { servers: true } },
+      },
+      {
+        id: 'mcp-unknown-method',
+        title: 'An unknown JSON-RPC method is refused in the JSON-RPC error shape',
+        why: 'JSON-RPC says an unknown method returns an `error` object with a code, not an HTTP failure or a bare string. A client dispatching on the error code needs that shape.',
+        surface: 'mcp.aggregate',
+        body: () => ({ jsonrpc: '2.0', id: 99, method: 'tools/doesNotExist', params: {} }),
+        reference: 'mcp-spec',
+        spends: false,
+        expect: { status: 200, bodyPath: { 'error.code': true } },
       },
     ],
   },
@@ -249,6 +427,7 @@ export type ScenarioOutcome =
   | 'fail'
   | 'landmine-present'
   | 'landmine-changed'
+  | 'not-implemented'
   | 'inconclusive'
   | 'error';
 
@@ -257,6 +436,8 @@ export interface ScenarioResult {
   title: string;
   suiteId: string;
   landmine?: string;
+  notImplemented?: string;
+  reference: ExpectationSource;
   outcome: ScenarioOutcome;
   /** Every expectation that was not met, in words. */
   failures: string[];
@@ -352,8 +533,15 @@ export function evaluateScenario(
     (exchange.verdict.kind === 'auth' || exchange.verdict.kind === 'server-error') &&
     !matched;
 
-  // For a landmine the expectation describes the DEFECT, so matching means the
-  // defect is still there, and not matching means something moved.
+  // Three different inversions, and conflating them is how a suite stops being
+  // readable:
+  //
+  //  - A landmine expectation describes the DEFECT. Matching means the defect
+  //    is still present; not matching means something moved.
+  //  - A notImplemented expectation describes the TARGET. Matching means the
+  //    feature has landed (a real pass); not matching is the expected state
+  //    while the work is in progress, and is not a failure.
+  //  - Everything else is an ordinary pass or fail.
   const outcome: ScenarioOutcome =
     exchange.transportError !== undefined
       ? 'error'
@@ -363,9 +551,13 @@ export function evaluateScenario(
           ? matched
             ? 'landmine-present'
             : 'landmine-changed'
-          : matched
-            ? 'pass'
-            : 'fail';
+          : scenario.notImplemented !== undefined
+            ? matched
+              ? 'pass'
+              : 'not-implemented'
+            : matched
+              ? 'pass'
+              : 'fail';
 
   const result: ScenarioResult = {
     scenarioId: scenario.id,
@@ -379,8 +571,10 @@ export function evaluateScenario(
     envelope: exchange.verdict.envelope,
     totalMs: exchange.timings.totalMs,
     targetLabel,
+    reference: scenario.reference ?? 'measured',
   };
   if (scenario.landmine !== undefined) result.landmine = scenario.landmine;
+  if (scenario.notImplemented !== undefined) result.notImplemented = scenario.notImplemented;
   return result;
 }
 
@@ -402,6 +596,7 @@ export function tally(results: readonly ScenarioResult[]): Record<ScenarioOutcom
     fail: 0,
     'landmine-present': 0,
     'landmine-changed': 0,
+    'not-implemented': 0,
     inconclusive: 0,
     error: 0,
   };
@@ -427,20 +622,25 @@ export function reportToMarkdown(report: ScenarioReport): string {
   const t = report.tally;
   lines.push(
     `**${t.pass} pass · ${t.fail} fail · ${t['landmine-present']} landmine still present · ` +
-      `${t['landmine-changed']} landmine changed · ${t.inconclusive} inconclusive · ${t.error} error**`,
+      `${t['landmine-changed']} landmine changed · ${t['not-implemented']} not yet implemented · ` +
+      `${t.inconclusive} inconclusive · ${t.error} error**`,
   );
   lines.push('');
-  lines.push('| Target | Scenario | Outcome | HTTP | Verdict | Envelope | Notes |');
-  lines.push('|---|---|---|---|---|---|---|');
+  lines.push('| Target | Scenario | Outcome | Ref | HTTP | Verdict | Envelope | Notes |');
+  lines.push('|---|---|---|---|---|---|---|---|');
   for (const r of report.results) {
     const notes = r.failures.length > 0 ? r.failures.join('; ') : '';
     lines.push(
-      `| ${r.targetLabel} | ${r.title} | ${r.outcome} | ${r.status ?? '—'} | ${r.verdict} | ${r.envelope} | ${notes} |`,
+      `| ${r.targetLabel} | ${r.title} | ${r.outcome} | ${r.reference} | ${r.status ?? '—'} | ${r.verdict} | ${r.envelope} | ${notes} |`,
     );
   }
   lines.push('');
   lines.push(
-    '> A `landmine-present` row is the expected state for a known defect. A `landmine-changed` row means the behaviour moved — check whether it was fixed. An `inconclusive` row means the target refused the request outright (bad key for that gateway, or a 5xx), so the scenario never got to ask its question.',
+    '> A `landmine-present` row is the expected state for a known defect. A `landmine-changed` row means the behaviour moved — check whether it was fixed. A `not-implemented` row is the expected state for a feature still being built: the expectation states the target, and when such a row turns `pass` the feature has landed. An `inconclusive` row means the target refused the request outright (bad key for that gateway, or a 5xx), so the scenario never got to ask its question.',
+  );
+  lines.push('');
+  lines.push(
+    '> The `Ref` column is where each expectation comes from. `openai` and `mcp-spec` are published contracts. `litellm` is the compatibility target but is **not** verified against a local LiteLLM here — treat those as documented behaviour pending confirmation. `measured` only records what this gateway was observed doing once, and cannot tell you that behaviour is correct.',
   );
   return lines.join('\n');
 }

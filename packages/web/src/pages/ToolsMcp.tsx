@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
-import { TOOL_PRESETS } from '@tokenshield/client';
+import { tallyPolicies, TOOL_PRESETS } from '@tokenshield/client';
+import type { McpPolicy, McpTool } from '@tokenshield/client';
 import type { AuthScheme, Exchange, ModelInfo, ToolTurn } from '@tokenshield/client';
 
 import { api } from '../api';
@@ -60,6 +61,8 @@ function ToolLoopCard({
   const [selected, setSelected] = useState<string[]>(['get_weather']);
   const [prompt, setPrompt] = useState('What is the weather in Paris?');
   const [toolChoice, setToolChoice] = useState('auto');
+  const [surfaceId, setSurfaceId] = useState('chat.completions');
+  const [wrongShape, setWrongShape] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ToolLoopResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +76,7 @@ function ToolLoopCard({
     setError(null);
     setResult(null);
     api
-      .toolLoop({ ...target, model, prompt, tools: selected, toolChoice })
+      .toolLoop({ ...target, model, prompt, tools: selected, toolChoice, surfaceId, wrongToolShape: wrongShape })
       .then(setResult)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
@@ -138,6 +141,43 @@ function ToolLoopCard({
 
       <div className="mt-3">
         <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">
+          Surface
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(['chat.completions', 'responses'] as const).map((sid) => (
+            <button
+              key={sid}
+              type="button"
+              onClick={() => setSurfaceId(sid)}
+              className={`mono rounded-md border px-2.5 py-1 text-xs ${
+                surfaceId === sid
+                  ? 'border-sky-600 bg-sky-950/40 text-sky-200'
+                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
+              }`}
+            >
+              {sid === 'responses' ? '/v1/responses' : '/v1/chat/completions'}
+            </button>
+          ))}
+          <label className="ml-2 flex items-center gap-1.5 text-[11px] text-zinc-400">
+            <input
+              type="checkbox"
+              checked={wrongShape}
+              onChange={(e) => setWrongShape(e.target.checked)}
+              className="accent-amber-600"
+            />
+            send the other surface&rsquo;s tool shape
+          </label>
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
+          Chat declares a tool nested under <span className="mono">function</span>; Responses
+          declares it flat, with <span className="mono">name</span> at the top level. The gateway
+          reads the name from a different place on each, so reusing a chat definition on Responses
+          declares a tool whose name it cannot see. Tick the box to do that deliberately.
+        </p>
+      </div>
+
+      <div className="mt-3">
+        <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">
           Tools offered
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -197,7 +237,11 @@ function ToolLoopReport({ result }: { result: ToolLoopResult }) {
           <StatusPill status="pass" label="round trip completed" />
         )}
         <span className="text-xs text-zinc-500">
-          {result.turns.length} turn(s) · offered {result.offered.join(', ')}
+          <span className="mono">{result.surfaceId}</span> · {result.turns.length} turn(s) · offered{' '}
+          {result.offered.join(', ')}
+          {result.wrongToolShape && (
+            <span className="ml-1 rounded bg-amber-500/10 px-1 text-amber-300">wrong shape</span>
+          )}
         </span>
       </div>
 
@@ -314,7 +358,18 @@ function McpCard({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<McpBrowseResult | null>(null);
   const [aggregate, setAggregate] = useState<Exchange | null>(null);
+  const [testResult, setTestResult] = useState<Exchange | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function onTest(server: string): void {
+    setError(null);
+    setTestResult(null);
+    api
+      .mcpTest({ ...target, server })
+      .then(setTestResult)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(onRecorded);
+  }
 
   function browse(): void {
     setBusy(true);
@@ -376,23 +431,85 @@ function McpCard({
       {error !== null && <p className="mt-3 text-xs text-rose-400">{error}</p>}
 
       {result !== null && (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          <div>
-            <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wider text-zinc-600">
-              GET /v1/mcp/servers
-              <span className="mono text-zinc-500">{result.servers.status ?? '—'}</span>
-              <VerdictPill kind={result.servers.verdict.kind} />
-            </div>
-            <Json value={result.servers.body} maxHeight={260} />
+        <div className="mt-4 space-y-4">
+          <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider text-zinc-600">
+            GET /v1/mcp/servers
+            <span className="mono text-zinc-500">{result.servers.status ?? '—'}</span>
+            <VerdictPill kind={result.servers.verdict.kind} />
+            <span className="text-zinc-700">·</span>
+            GET /v1/mcp/tools
+            <span className="mono text-zinc-500">{result.tools.status ?? '—'}</span>
+            <VerdictPill kind={result.tools.verdict.kind} />
           </div>
-          <div>
-            <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wider text-zinc-600">
-              GET /v1/mcp/tools
-              <span className="mono text-zinc-500">{result.tools.status ?? '—'}</span>
-              <VerdictPill kind={result.tools.verdict.kind} />
+
+          {result.servers.parsed.length === 0 && result.tools.parsed.length === 0 ? (
+            <div className="rounded-md border border-amber-900/50 bg-amber-950/15 px-3 py-2 text-xs text-amber-200/90">
+              This key sees no MCP servers. Note that this endpoint cannot tell you which of two
+              very different things that means: none are configured, or some are configured and
+              discovery failed. Both answer with an empty list and a 200.
             </div>
-            <Json value={result.tools.body} maxHeight={260} />
+          ) : (
+            <>
+              <PolicySummary tools={result.tools.parsed} />
+              {result.servers.parsed.map((server) => (
+                <div key={server.id} className="rounded-md border border-zinc-800">
+                  <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-2 text-xs">
+                    <span className="text-zinc-200">{server.name}</span>
+                    <span className="mono text-[10px] text-zinc-600">{server.id}</span>
+                    <span className="mono rounded bg-zinc-900 px-1.5 text-[10px] text-zinc-400">
+                      {server.transport}
+                    </span>
+                    <span className="text-[10px] text-zinc-600">{server.tools.length} tool(s)</span>
+                    <button
+                      type="button"
+                      onClick={() => onTest(server.id)}
+                      className="ml-auto rounded-md border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-300 hover:border-zinc-600"
+                    >
+                      test reachability
+                    </button>
+                  </div>
+                  {server.tools.length > 0 && (
+                    <table className="w-full text-left text-[11px]">
+                      <tbody>
+                        {server.tools.map((t) => (
+                          <tr key={t.name} className="border-t border-zinc-800/60">
+                            <td className="mono px-3 py-1 text-zinc-300">{t.name}</td>
+                            <td className="px-3 py-1">
+                              <PolicyPill policy={t.policy} />
+                            </td>
+                            <td className="px-3 py-1 text-zinc-600">
+                              {(t.description ?? '').slice(0, 80)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+
+          <details>
+            <summary className="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
+              raw responses
+            </summary>
+            <div className="mt-2 grid gap-3 lg:grid-cols-2">
+              <Json value={result.servers.body} maxHeight={220} collapsedByDefault />
+              <Json value={result.tools.body} maxHeight={220} collapsedByDefault />
+            </div>
+          </details>
+        </div>
+      )}
+
+      {testResult !== null && (
+        <div className="mt-4">
+          <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wider text-zinc-600">
+            POST /v1/mcp/servers/test
+            <span className="mono text-zinc-500">{testResult.response?.status ?? '—'}</span>
+            <VerdictPill kind={testResult.verdict.kind} />
           </div>
+          <Json value={testResult.response?.body ?? testResult.response?.bodyText} maxHeight={200} />
         </div>
       )}
 
@@ -416,5 +533,71 @@ function McpCard({
         <Empty>Nothing loaded yet.</Empty>
       )}
     </Card>
+  );
+}
+
+
+// ── MCP policy ───────────────────────────────────────────────────────────────
+
+const POLICY_TONE: Record<McpPolicy, string> = {
+  allow: 'bg-emerald-500/10 text-emerald-300',
+  ask: 'bg-amber-500/10 text-amber-300',
+  block: 'bg-rose-500/10 text-rose-300',
+  unknown: 'bg-zinc-700/40 text-zinc-400',
+};
+
+function PolicyPill({ policy }: { policy: McpPolicy }) {
+  return (
+    <span className={`mono rounded px-1.5 py-0.5 text-[10px] ${POLICY_TONE[policy]}`}>{policy}</span>
+  );
+}
+
+/**
+ * The counts, and the thing worth knowing about them.
+ *
+ * A tool being advertised is not the same as a tool being usable — the list
+ * endpoint returns blocked tools too, with their policy attached. And `ask` is
+ * a value the API still advertises although the gateway's enforcement model no
+ * longer has an ask state, so a client branching on it is coding against
+ * something nothing should produce.
+ */
+function PolicySummary({ tools }: { tools: McpTool[] }) {
+  const t = tallyPolicies(tools);
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-zinc-500">{t.total} tool(s) reachable by this key:</span>
+        <PolicyPill policy="allow" />
+        <span className="mono text-zinc-300">{t.allow}</span>
+        <PolicyPill policy="block" />
+        <span className="mono text-zinc-300">{t.block}</span>
+        {t.ask > 0 && (
+          <>
+            <PolicyPill policy="ask" />
+            <span className="mono text-zinc-300">{t.ask}</span>
+          </>
+        )}
+        {t.unknown > 0 && (
+          <>
+            <PolicyPill policy="unknown" />
+            <span className="mono text-zinc-300">{t.unknown}</span>
+          </>
+        )}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
+        Advertised is not the same as usable — a <span className="mono">block</span> tool still
+        appears in the listing, with its policy attached.
+        {t.ask > 0 && (
+          <>
+            {' '}
+            <span className="text-amber-400">
+              An <span className="mono">ask</span> policy is worth a second look: the gateway
+              advertises that value but its enforcement model no longer has an ask state, so it is
+              not clear what actually happens when such a tool is called.
+            </span>
+          </>
+        )}
+      </p>
+    </div>
   );
 }

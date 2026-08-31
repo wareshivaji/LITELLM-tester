@@ -43,10 +43,25 @@ export interface ToolPreset {
   label: string;
   /** Why this one is useful to offer. */
   why: string;
-  /** OpenAI chat-shaped tool definition. */
+  /** Chat-shaped: `{type:'function', function:{name, parameters}}`. */
   definition: unknown;
+  /**
+   * Responses-shaped: the same tool, flat, with `name` at the top level.
+   *
+   * Not a detail worth hiding. The gateway reads client tool names from a
+   * different place on each surface — nested under `function` for chat, top
+   * level for Responses — so a client that reuses a chat definition on
+   * `/v1/responses` declares a tool the gateway cannot see the name of. Having
+   * both shapes here makes that testable rather than theoretical.
+   */
+  responsesDefinition: unknown;
   /** A canned local implementation, so the loop can complete without side effects. */
   run: (args: unknown) => unknown;
+}
+
+/** Flattens a chat-shaped tool definition into the Responses shape. */
+function toResponsesShape(name: string, description: string, parameters: unknown): unknown {
+  return { type: 'function', name, description, parameters };
 }
 
 /**
@@ -71,6 +86,11 @@ export const TOOL_PRESETS: readonly ToolPreset[] = [
         },
       },
     },
+    responsesDefinition: toResponsesShape('get_weather', 'Get the current temperature for a city.', {
+      type: 'object',
+      properties: { city: { type: 'string', description: 'City name' } },
+      required: ['city'],
+    }),
     run: (args) => {
       const city = isRecord(args) && typeof args['city'] === 'string' ? args['city'] : 'unknown';
       return { city, temperature_c: 21, conditions: 'clear' };
@@ -92,6 +112,11 @@ export const TOOL_PRESETS: readonly ToolPreset[] = [
         },
       },
     },
+    responsesDefinition: toResponsesShape('get_time', 'Get the current local time in a city.', {
+      type: 'object',
+      properties: { city: { type: 'string', description: 'City name' } },
+      required: ['city'],
+    }),
     run: (args) => {
       const city = isRecord(args) && typeof args['city'] === 'string' ? args['city'] : 'unknown';
       return { city, local_time: '14:30' };
@@ -131,6 +156,37 @@ export function extractToolCalls(body: unknown): ToolCall[] {
       if (argsText.length > 0) call.argumentsParsed = JSON.parse(argsText);
     } catch {
       // Left absent — malformed arguments are a finding, not a crash.
+    }
+    out.push(call);
+  }
+  return out;
+}
+
+/**
+ * Reads tool calls out of a Responses payload.
+ *
+ * A different shape again: `output[]` carries `function_call` items with
+ * `call_id`, `name` and `arguments`, rather than chat's
+ * `choices[0].message.tool_calls`.
+ */
+export function extractResponsesToolCalls(body: unknown): ToolCall[] {
+  if (!isRecord(body)) return [];
+  const output = body['output'];
+  if (!Array.isArray(output)) return [];
+  const out: ToolCall[] = [];
+  for (const raw of output) {
+    if (!isRecord(raw)) continue;
+    if (raw['type'] !== 'function_call') continue;
+    const argsText = typeof raw['arguments'] === 'string' ? raw['arguments'] : '';
+    const call: ToolCall = {
+      id: typeof raw['call_id'] === 'string' ? raw['call_id'] : '',
+      name: typeof raw['name'] === 'string' ? raw['name'] : '',
+      argumentsText: argsText,
+    };
+    try {
+      if (argsText.length > 0) call.argumentsParsed = JSON.parse(argsText);
+    } catch {
+      // Malformed arguments are the finding, not a crash.
     }
     out.push(call);
   }
@@ -204,8 +260,16 @@ export function summariseTurn(
   kind: ToolTurn['kind'],
   exchange: Exchange,
   text: string | undefined,
+  surfaceId = 'chat.completions',
 ): ToolTurn {
-  const calls = extractToolCalls(exchange.response?.body);
+  // Chat and Responses carry tool calls in completely different places, so the
+  // summary has to be told which surface it is reading. Defaulting to chat and
+  // silently finding nothing on a Responses payload reported "0 calls" for a
+  // turn that had made one — a wrong answer that looked like a real result.
+  const calls =
+    surfaceId === 'responses'
+      ? extractResponsesToolCalls(exchange.response?.body)
+      : extractToolCalls(exchange.response?.body);
   const body = exchange.response?.body;
   let finishReason: string | undefined;
   if (isRecord(body)) {
@@ -214,6 +278,9 @@ export function summariseTurn(
       const reason = (choices[0] as Record<string, unknown>)['finish_reason'];
       if (typeof reason === 'string') finishReason = reason;
     }
+    // Responses reports completion as a top-level status instead.
+    const status = body['status'];
+    if (finishReason === undefined && typeof status === 'string') finishReason = status;
   }
   const turn: ToolTurn = {
     index,

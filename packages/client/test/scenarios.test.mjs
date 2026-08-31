@@ -147,6 +147,121 @@ const results = [
 const counts = tally(results);
 check('tally counts each outcome', [counts.pass, counts['landmine-present'], counts.inconclusive], [1, 1, 1]);
 
+// ── the not-implemented inversion ───────────────────────────────────────────
+// A third inversion, and the reason it exists: unfinished work must not report
+// as a defect. A landmine says "this code is done and wrong". An in-progress
+// feature is neither, and calling it a plain failure makes a suite unreadable
+// while the work is still landing.
+const pending = {
+  id: 'p',
+  title: 'P',
+  why: '',
+  surface: 's',
+  body: () => ({}),
+  reference: 'openai',
+  notImplemented: 'not built yet',
+  spends: false,
+  // The expectation states the TARGET, not the current behaviour.
+  expect: { status: 200 },
+};
+
+check(
+  'a notImplemented expectation NOT met is the expected state, not a failure',
+  evaluateScenario(pending, 'suite', exchange({ status: 400, verdict: 'bad-request' }), 'T').outcome,
+  'not-implemented',
+);
+
+check(
+  'a notImplemented expectation being met means the feature landed',
+  evaluateScenario(pending, 'suite', exchange({ status: 200 }), 'T').outcome,
+  'pass',
+);
+
+check(
+  'the pending note travels with the result so a reader knows why',
+  evaluateScenario(pending, 'suite', exchange({ status: 400, verdict: 'bad-request' }), 'T')
+    .notImplemented,
+  'not built yet',
+);
+
+check(
+  'an unreachable target still blocks a notImplemented scenario - nothing was measured',
+  evaluateScenario(pending, 'suite', exchange({ status: 401, verdict: 'auth' }), 'T').outcome,
+  'inconclusive',
+);
+
+check(
+  'a transport error beats the pending marker too',
+  evaluateScenario(pending, 'suite', exchange({ transportError: 'ECONNREFUSED' }), 'T').outcome,
+  'error',
+);
+
+check(
+  'landmine and notImplemented give different outcomes for the same measurement',
+  [
+    evaluateScenario(landmine, 'suite', exchange({ status: 400, verdict: 'bad-request' }), 'T')
+      .outcome,
+    evaluateScenario(pending, 'suite', exchange({ status: 400, verdict: 'bad-request' }), 'T')
+      .outcome,
+  ],
+  ['landmine-present', 'not-implemented'],
+);
+
+// Provenance. `measured` is the default precisely because it is the weakest
+// claim: assuming a stronger one by accident is how a lab starts asserting that
+// whatever it happened to see first is correct.
+check(
+  'a scenario with no stated reference defaults to measured',
+  evaluateScenario(normal, 'suite', exchange({ status: 200 }), 'T').reference,
+  'measured',
+);
+
+check(
+  'a stated reference is carried through to the result',
+  evaluateScenario(pending, 'suite', exchange({ status: 200 }), 'T').reference,
+  'openai',
+);
+
+const pendingResults = [
+  evaluateScenario(pending, 'x', exchange({ status: 400, verdict: 'bad-request' }), 'T'),
+];
+const pendingCounts = tally(pendingResults);
+check(
+  'tally counts a not-implemented row separately from pass and fail',
+  [pendingCounts['not-implemented'], pendingCounts.pass, pendingCounts.fail],
+  [1, 0, 0],
+);
+
+const pendingMd = reportToMarkdown({
+  suiteId: 'x',
+  suiteTitle: 'X',
+  startedAt: '2026-01-01T00:00:00.000Z',
+  durationMs: 1,
+  model: 'm',
+  embedModel: 'e',
+  targets: [{ label: 'T', baseUrl: 'https://x', keyAlias: 'K' }],
+  results: pendingResults,
+  tally: pendingCounts,
+});
+
+check(
+  'markdown explains a not-implemented row rather than leaving it read as a failure',
+  pendingMd.includes('not-implemented') && pendingMd.includes('the feature has landed'),
+  true,
+);
+
+check(
+  'markdown says plainly that litellm references are unverified here',
+  pendingMd.includes('not** verified against a local LiteLLM'),
+  true,
+);
+
+check(
+  'markdown carries the reference column so provenance survives export',
+  pendingMd.includes('| Ref |') && pendingMd.includes('| openai |'),
+  true,
+);
+
 const md = reportToMarkdown({
   suiteId: 's',
   suiteTitle: 'Suite',

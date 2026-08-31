@@ -11,6 +11,8 @@ import type {
   MintedKeySummary,
   SdkMode,
   SdkOutcome,
+  McpServer,
+  McpTool,
   ScenarioReport,
   ScenarioResult,
   StreamChunk,
@@ -71,6 +73,8 @@ export interface ProbeResult {
 }
 
 export interface ToolLoopResult {
+  surfaceId: string;
+  wrongToolShape: boolean;
   turns: ToolTurn[];
   offered: string[];
   executed: Array<{ name: string; result: unknown }>;
@@ -81,8 +85,21 @@ export interface ToolLoopResult {
 }
 
 export interface McpBrowseResult {
-  servers: { status: number | null; verdict: Verdict; body: unknown; exchangeId: string };
-  tools: { status: number | null; verdict: Verdict; body: unknown; exchangeId: string };
+  servers: {
+    status: number | null;
+    verdict: Verdict;
+    /** Typed by the SDK, so the UI can show the policy per tool. */
+    parsed: McpServer[];
+    body: unknown;
+    exchangeId: string;
+  };
+  tools: {
+    status: number | null;
+    verdict: Verdict;
+    parsed: McpTool[];
+    body: unknown;
+    exchangeId: string;
+  };
 }
 
 export interface RunsResponse {
@@ -299,10 +316,21 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  /** A full client-declared tool conversation. Spends. */
+  /** A full client-declared tool conversation, on either surface. Spends. */
   toolLoop: (
-    body: TargetRef & { model: string; prompt: string; tools: string[]; toolChoice: string },
+    body: TargetRef & {
+      model: string;
+      prompt: string;
+      tools: string[];
+      toolChoice: string;
+      surfaceId: string;
+      wrongToolShape: boolean;
+    },
   ) => json<ToolLoopResult>('/api/tools/loop', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** Probe one registered MCP server with its stored credential, server-side. */
+  mcpTest: (body: TargetRef & { server: string }) =>
+    json<Exchange>('/api/mcp/test', { method: 'POST', body: JSON.stringify(body) }),
 
   /** Servers and tools this key can see. Free. */
   mcpBrowse: (body: TargetRef) =>

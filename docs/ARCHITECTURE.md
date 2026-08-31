@@ -240,6 +240,65 @@ registers it in the in-memory registry, and runs the Exchange through `redactMin
 it reaches the store. The browser receives an alias and a mask, never the value. The scrub runs on
 the failure path too, where a partial body might still carry something.
 
+### AD-27 · MCP is read through typed readers, not raw JSON
+**Why.** The MCP list endpoints carry a `policy` per tool, which is the difference between "this
+key can see the tool" and "this key can use it" — and a raw JSON dump buries it. `mcp.ts` parses
+both listings into `McpServer`/`McpTool` with a normalised `McpPolicy`, so the console can show
+counts and flag the `ask` value the API advertises for a state the gateway no longer enforces. An
+unrecognised policy string becomes `unknown` rather than being silently treated as one of the
+known values.
+
+### AD-28 · `summariseTurn` must be told which surface it is reading
+**Why.** Learned by shipping the bug. The turn summary originally used the chat tool-call
+extractor unconditionally, so a Responses turn that *had* made a tool call was reported as
+"0 calls" — a wrong answer that looked like a real result, and it sent me looking for a
+model-behaviour problem that did not exist. Chat and Responses carry tool calls in completely
+different places; anything reading them takes the surface as an argument.
+
+### AD-30 · Every expectation names its source, and unfinished work is not a defect
+**Why.** Two problems, one cause: a test that says only *"expected 200, got 400"* cannot tell you
+whether the gateway is wrong or whether **we** assumed something. So every scenario now carries a
+`reference` — `openai`, `mcp-spec`, `litellm` or `measured` — and it is printed on the row and in
+the exported report.
+
+`measured` is the deliberate default, because it is the **weakest** claim: it records only that the
+gateway did this once, and cannot establish that the behaviour is correct. A `measured` expectation
+that starts failing means something *changed*, not necessarily that something broke. Defaulting to
+a stronger source by accident is how a lab quietly starts asserting that whatever it happened to
+see first is the standard.
+
+The second half is the `notImplemented` marker and its own `not-implemented` outcome, added when
+the MCP/Responses work turned out to be still landing. There are now three inversions and
+collapsing them loses real information:
+
+| Marker | The expectation describes | Matching means | Not matching means |
+|---|---|---|---|
+| `landmine` | the **defect** | the bug is still there (expected) | it moved — probably fixed |
+| `notImplemented` | the **target** | the feature landed (a real pass) | expected while the work is in progress |
+| neither | the contract | pass | fail |
+
+A landmine asserts "this code is finished and wrong", which reads as a regression and belongs in a
+bug report. Filing unfinished work that way is simply inaccurate, and reporting it as a plain
+failure makes an in-progress feature look broken — which makes the whole suite untrustworthy
+exactly when someone is relying on it to see whether their work is landing. When a
+`not-implemented` row turns `pass`, the feature arrived and the marker comes off.
+
+**Rejected.** A `skip` flag on unfinished scenarios. Skipping stops measuring, so the day the
+feature lands nothing notices. The point of the inversion is that arrival is detected
+automatically.
+
+**Guarded.** `not-implemented` is only reachable when something was actually measured. On an
+unreachable target the row is `error`, and on a target that refused the request it is
+`inconclusive` — verified live against a stopped gateway, where all four MCP rows came back
+`error` rather than inventing a conclusion from nothing. There are 12 unit tests on this
+precedence.
+
+### AD-29 · Echo the server's own items back; never reconstruct them
+**Why.** Also learned by shipping the bug. The Responses follow-up turn originally rebuilt the
+`function_call` item from the parts the SDK had extracted, which dropped the `id` and `status` the
+gateway had assigned. A real client echoes what it received, and reconstructing a payload the
+server just sent you tests your guess about its shape rather than the gateway.
+
 ### AD-24 · The target is switchable from every page, not just a settings page
 **Why.** Every page's behaviour depends on which gateway and key are selected, and the selection
 originally lived only on Connect — so trying a request against a second gateway meant navigating
@@ -325,6 +384,7 @@ hardening.
 | 6 | Tools & MCP | **Done** | 8/8 | `ad5bddd` |
 | 7 | Scenario runner, Compare, report export | **Done** | 8/8 | `2a5a92d` |
 | 8 | Docs, ESLint, unit tests, BP checklist | **Done** | 87 unit tests | `3dfe327` |
+| — | Responses/MCP surface, expectation provenance | **Done** | 99 unit tests; MCP suite (4, all free) | pending |
 
 **All eight phases complete.** Verified end to end from a clean clone: `npm install` → `npm run
 build` → `npm run typecheck` (0 errors) → `eslint .` (exit 0) → `npm test` (87 passed).
@@ -383,6 +443,20 @@ Recorded because they are the reason the tests exist.
 
 What the tool has established about TokenShield. Measured against **Prod US** on
 `bedrock-nova-micro` with a Bedrock-scoped key, on the dates given.
+
+### Responses API and MCP (gateway branch `feature/responses-api-mcp-tools`, 2026-08-31)
+
+Re-read against the branch that adds Responses-API MCP tools, per-key MCP entitlement and the
+two-state tool policy.
+
+| Finding | Detail |
+|---|---|
+| **`/v1/responses` drops a shorthand user turn once tool items are present** | Isolated to four cases: shorthand `{role, content}` alone → **200**; explicit `{type:"message", …}` alone → **200**; shorthand **plus** `function_call`/`function_call_output` → **400**; explicit plus the same tool items → **200**. So the shorthand item is accepted on its own and dropped when tool items follow, after which the gateway sees the conversation starting with a `function_call` and answers *"A conversation must start with a user message"* — about a request that starts with one. OpenAI's documented tool-continuation uses the shorthand form, so any client following it hits this, and the error sends them looking for something already there. Workaround: the explicit message item. Kept under test as the paired scenarios `responses-shorthand-continuation` and `responses-explicit-continuation` (the workaround). **Reclassified 2026-08-31** from a landmine to `notImplemented` with `reference: 'openai'`: this branch's Responses/MCP work is unfinished, so the expectation now states what an OpenAI-compatible client is entitled to (200) rather than recording the current 400 as though it were settled behaviour. See AD-30 |
+| The client-declared-tool swallow is **fixed** | The loop now has `ClientTools()` and `callsClientTool`, with tests for hand-back including mixed turns, and `conversation_responses.go` does the same for Responses. Phase 6 could not reproduce the swallow because this key has no MCP servers; the fix is now visible in the code rather than inferred |
+| Chat and Responses declare tools in **different shapes** | Chat nests the name under `function`; Responses carries it flat at the top level, and the gateway reads `ClientTools()` from a different place on each. A client reusing a chat definition on Responses declares a tool whose name the gateway cannot see. Measured: the wrong shape still produced a tool call on this key — with no MCP servers in scope there is no MCP loop to intercept it — so the mismatch is latent rather than visibly broken here |
+| `policy` is exposed per tool, and `ask` is advertised but unenforceable | Both `/v1/mcp/servers` and `/v1/mcp/tools` carry a `policy` of `allow \| ask \| block` per tool. Internally `NEED_APPROVAL` was removed and a policy is now either a grant or not, so `ask` is a value the API still advertises for a state the enforcement model no longer has. A client branching on it is coding against something nothing should produce |
+| Org and key policies use **opposite** models | At org level the policy is a blacklist — only an explicit `BLOCK` denies, and an unrecognised or legacy value is allowed. At key level it is an allow-list — only `ALWAYS_ALLOW` grants, and anything else including a stale `NEED_APPROVAL` does not. The same stored value therefore means "allowed" on an org and "not granted" on a key |
+| An unrecognised `mcpAccess` mode **fails open** | `ScopeForKey` keeps every server for `ALL`, empty, *or anything unrecognised*. A typo in the access mode widens entitlement rather than narrowing it |
 
 ### Tools and MCP (Phase 6)
 
@@ -480,7 +554,7 @@ ticked.
 | BP-004 appropriate logging | **Pass** | One line per event on the backend; credentials masked before any log call. Fastify logs method and URL, never bodies — the mint route's body carries a live key |
 | BP-007 no response over 1 MB | **Pass** | `/api/runs` returns summaries and is always bounded (default 50, max 200); full exchanges are fetched one at a time by id; the ring buffer caps total retention at 200 |
 | BP-008 no thousands of objects in loops | **Pass** | The rate-limit burst is capped at 150 and abandons after 3 consecutive broken responses; the model probe at 12; suites run sequentially |
-| BP-009 unit tests for all new code | **Pass** | 87 tests over the pure modules: SSE parser 20, classifier 22, redaction 21, scenario evaluation 24. The I/O layer is covered by the 60+ live test cases recorded in the ledger |
+| BP-009 unit tests for all new code | **Pass** | 99 tests over the pure modules: SSE parser 20, classifier 22, redaction 21, scenario evaluation 36. The I/O layer is covered by the 60+ live test cases recorded in the ledger |
 | BP-103 pagination on list APIs | **Pass** | `/api/runs` takes `limit`, defaults to 50, caps at 200, and returns the applied limit |
 | BP-500 no secrets committed | **Pass** | `.env*` gitignored except `.env.example` (placeholders only); every commit scanned for a full-length `cg-ak-`/`cg-mk-` before landing; masking unit-tested; the minted-key redaction verified end to end (P5-07) |
 | BP-600 all queries bounded | N/A | No database — AD-03 |

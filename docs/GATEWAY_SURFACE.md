@@ -4,6 +4,14 @@ Read from `~/Cloudgov/cloudgov-ai-gateway` source on **2026-08-26**, branch
 `feature/per-key-mcp-tool-policy`. This is the contract the SDK is written against. When
 something here turns out to be wrong, fix it here first, then fix the code.
 
+> **Re-read 2026-08-31** against gateway branch `feature/responses-api-mcp-tools`. Routes are
+> unchanged; the changes are behavioural. Now confirmed present: per-key MCP entitlement
+> (`ScopeForKey`, `mcpAccess` ALL/NONE/SELECTED, failing **open** on an unrecognised mode), a
+> two-state tool policy (`ALWAYS_ALLOW`/`BLOCK` — `NEED_APPROVAL` removed, though `ask` is still
+> advertised on the wire), client-declared-tool hand-back on **both** chat and Responses, and
+> `mcp_tool_call` frames emitted into streams. Org policy is a blacklist, key policy is an
+> allow-list — the same stored value means different things at the two levels.
+>
 > **Branch caveat.** Phase-1 verification (2026-08-27) ran against a local gateway built from
 > **`main`**, and everything below that was exercised — `/health`, `HEAD /`, `/api/v1/metrics`,
 > `/v1/models`, the OpenAI error envelope — behaved identically. The parts sourced from the
@@ -176,6 +184,36 @@ These cost real debugging time before; `packages/client/src/classify.ts` encodes
 | `filestore` | Files API | upload, then reference in a chat request |
 | `tracing` | trace / span / session id, `turn_count` | `X-Request-ID` as the join key |
 | `billing` | usage rows into ClickHouse | spend moves |
+
+---
+
+## 5b. What the MCP/Responses expectations are measured against
+
+The gateway's Responses-API and MCP work is **unfinished**, so encoding its current behaviour as
+the contract would freeze an in-progress implementation into a standard. The expectations are
+therefore written against external references, and each scenario names which one it used
+(`reference` on the row and in the exported report). See AD-30.
+
+**Solid ground — published contracts:**
+
+| Reference | Used for |
+|---|---|
+| MCP specification | JSON-RPC framing on `POST /v1/mcp`: `tools/list` returns `result.tools[]`; an unknown method returns an `error` object with a numeric `code`, not an HTTP failure; under Streamable HTTP a server that wants a session assigns `Mcp-Session-Id` and the client echoes it |
+| OpenAI Responses API | Tool continuation: the documented form sends the prior turn's items back in `input[]` keyed by `call_id`, alongside the user turn in the shorthand `{role, content}` form |
+
+**Not verified here — needs confirmation before it is treated as authoritative:**
+
+LiteLLM is the stated compatibility target (`tokenshield-compat-tests` measures "what an
+OpenAI/LiteLLM client expects"), but **no LiteLLM source or package is installed on this machine** —
+`litellm` is not importable and there is no local checkout. Anything marked `reference: 'litellm'`
+is therefore from documented behaviour rather than from something checked, and is flagged as such in
+the UI tooltip and the report legend. No scenario currently relies on a LiteLLM-specific claim: the
+four MCP scenarios are all `mcp-spec`, and the Responses pair is `openai`. Specific points that
+would need a real LiteLLM to settle:
+
+- whether aggregated tool names are namespaced, and with what separator
+- whether `x-mcp-servers` is the scoping header and how an unknown server name is treated
+- whether an MCP tool failure surfaces as a tool result carrying an error or as a request failure
 
 ---
 

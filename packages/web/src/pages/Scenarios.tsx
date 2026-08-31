@@ -21,6 +21,7 @@ const OUTCOME_TONE: Record<ScenarioOutcome, CheckStatusLike> = {
   fail: 'fail',
   'landmine-present': 'warn',
   'landmine-changed': 'warn',
+  'not-implemented': 'skip',
   inconclusive: 'skip',
   error: 'fail',
 };
@@ -30,6 +31,7 @@ const OUTCOME_LABEL: Record<ScenarioOutcome, string> = {
   fail: 'FAIL',
   'landmine-present': 'landmine',
   'landmine-changed': 'CHANGED',
+  'not-implemented': 'not yet',
   inconclusive: 'blocked',
   error: 'error',
 };
@@ -46,6 +48,8 @@ interface ScenariosProps {
 export function Scenarios(props: ScenariosProps) {
   const [suiteId, setSuiteId] = useState(SUITES[0]?.id ?? '');
   const suite = useMemo(() => SUITES.find((s) => s.id === suiteId) ?? SUITES[0], [suiteId]);
+  const pendingCount =
+    suite?.scenarios.filter((sc) => sc.notImplemented !== undefined).length ?? 0;
 
   const [secondProfile, setSecondProfile] = useState('');
   const models = props.catalogue.models;
@@ -235,6 +239,21 @@ export function Scenarios(props: ScenariosProps) {
           </span>
         </label>
 
+        {/*
+          Said before the run, not after. A suite that is *expected* to report
+          rows as not-yet-built should say so up front — otherwise the first
+          reading of the result looks like the gateway is broken.
+        */}
+        {pendingCount > 0 && (
+          <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+            {pendingCount} of {suite?.scenarios.length ?? 0} scenarios here test a feature that is
+            still being built. Those expectations state the <em>target</em> behaviour, so a{' '}
+            <span className="text-zinc-400">not yet</span> row is the expected result and not a
+            defect — and if one comes back{' '}
+            <span className="text-emerald-300">pass</span>, the feature has landed.
+          </p>
+        )}
+
         <div className="mt-4 flex items-center gap-3">
           <button
             type="button"
@@ -279,6 +298,9 @@ export function Scenarios(props: ScenariosProps) {
             {counts['landmine-changed'] > 0 && (
               <StatusPill status="warn" label={`${counts['landmine-changed']} CHANGED`} />
             )}
+            {counts['not-implemented'] > 0 && (
+              <StatusPill status="skip" label={`${counts['not-implemented']} not yet built`} />
+            )}
             {counts.inconclusive > 0 && (
               <StatusPill status="skip" label={`${counts.inconclusive} blocked`} />
             )}
@@ -289,6 +311,9 @@ export function Scenarios(props: ScenariosProps) {
             a known defect — it means the bug is still there. A{' '}
             <span className="text-amber-300">CHANGED</span> row means the behaviour moved and someone
             should look: most likely it was fixed. A{' '}
+            <span className="text-zinc-400">not yet</span> row is a feature still being built: the
+            expectation states the target behaviour, so this is the expected state — and when it
+            turns <span className="text-emerald-300">pass</span>, the feature landed. A{' '}
             <span className="text-zinc-400">blocked</span> row means the target refused the request
             outright — nothing was measured, so draw no conclusion from it.
           </p>
@@ -377,6 +402,26 @@ function ResultTable({ rows }: { rows: ScenarioResult[] }) {
                       {row.landmine !== undefined && (
                         <span className="mono ml-1.5 rounded bg-amber-500/10 px-1 text-[10px] text-amber-300">
                           {row.landmine}
+                        </span>
+                      )}
+                      <span
+                        className="mono ml-1.5 rounded bg-zinc-800 px-1 text-[10px] text-zinc-500"
+                        title={
+                          row.reference === 'litellm'
+                            ? 'Compatibility target, from documented LiteLLM behaviour — not verified against a local LiteLLM here'
+                            : row.reference === 'measured'
+                              ? 'Only what this gateway was observed doing. Cannot tell you the behaviour is correct'
+                              : 'A published contract'
+                        }
+                      >
+                        {row.reference}
+                      </span>
+                      {row.notImplemented !== undefined && (
+                        <span
+                          className="ml-1.5 block text-[10px] leading-tight text-zinc-600"
+                          title={row.notImplemented}
+                        >
+                          {row.notImplemented.slice(0, 110)}
                         </span>
                       )}
                     </td>

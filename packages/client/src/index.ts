@@ -53,6 +53,23 @@ export {
   toolPresetById,
 } from './tools.js';
 export type { ToolCall, ToolCallIssue, ToolPreset, ToolTurn } from './tools.js';
+export { extractResponsesToolCalls } from './tools.js';
+export {
+  readMcpServers,
+  readMcpTools,
+  readMcpToolEvent,
+  readPolicy,
+  summariseMcpCalls,
+  tallyPolicies,
+} from './mcp.js';
+export type {
+  McpCallSummary,
+  McpPolicy,
+  McpServer,
+  McpTool,
+  McpToolEvent,
+  PolicyTally,
+} from './mcp.js';
 export {
   checkExpectation,
   evaluateScenario,
