@@ -284,7 +284,7 @@ hardening.
 | 3 | Streaming — SSE parser, relay, timeline, conformance | **Done** | 13/13 (+20 unit) | `4210c0c` |
 | 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | **Done** | 13/13 | `4e917d3` |
 | 5 | Governance lab + key minting via management key | **Built**, 5/11 concluded | 5/11 | pending |
-| 6 | Tools & MCP | **Done** | 8/8 | pending |
+| 6 | Tools & MCP | **Done** | 8/8 | `ad5bddd` |
 | 7 | Scenario runner, Compare, report export | Not started | — | — |
 | 8 | Docs, ESLint, unit tests, BP checklist | Not started | — | — |
 
