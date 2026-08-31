@@ -302,7 +302,7 @@ hardening.
 | 2 | Playground — 8 surfaces, probes, inspector, curl | **Done** | 17/17 | `d15d573` |
 | 3 | Streaming — SSE parser, relay, timeline, conformance | **Done** | 13/13 (+20 unit) | `4210c0c` |
 | 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | **Done** | 13/13 | `4e917d3` |
-| 5 | Governance lab + key minting via management key | **Built**, 5/11 concluded | 5/11 | pending |
+| 5 | Governance lab + key minting via management key | **Done** | 11/11 | `36122d3` + follow-up |
 | 6 | Tools & MCP | **Done** | 8/8 | `ad5bddd` |
 | 7 | Scenario runner, Compare, report export | **Done** | 8/8 | `2a5a92d` |
 | 8 | Docs, ESLint, unit tests, BP checklist | Not started | — | — |
@@ -330,7 +330,9 @@ presented for approval **before** they run. Nothing is pushed without an explici
   US rather than as failures.
 - **Phase 6** — MCP browse and aggregate; the swallow test; parallel calls; three `tool_choice`
   modes.
-- **Phase 5** — mint refusals; the model-permission probe; the RPM burst; ring-buffer containment.
+- **Phase 5** — mint refusals; the model-permission probe; the RPM burst; ring-buffer containment;
+  minting with a management key; the minted-key redaction check; budget cap with lag measurement;
+  IP allowlist; per-key allowedModels.
 - **Phase 4** — mode legality per surface; illegal mode rejected; auth failure through both vendor
   SDKs; the flat 501 envelope through the OpenAI SDK, with and without retries; raw vs SDK on chat,
   messages, embeddings and Responses; `stop` as a string and `n=2` through the typed SDK; no retry
@@ -377,6 +379,11 @@ Measured on Prod US, `bedrock-nova-micro`, key `CLIENT_SDK_TESTING`, 2026-08-28.
 |---|---|
 | **`/v1` is not rate limited unless a key or org sets an RPM explicitly** | 100 requests in **297 ms** all returned 200 on a key with no RPM configured. The chain: `DEFAULT_RATE_LIMIT_RPM` (documented as 60 in `.env.example`) is parsed into `cfg.DefaultRateLimitRPM` at `internal/config/config.go:241` and **read nowhere else**; the inference limiter is built as `ratelimit.NewLimiter(0)` (`cmd/gateway/main.go:461`); and `resolveLimit` returns 0 — treated as unlimited — when neither the key nor the org config carries a positive `RateLimitRPM`. The per-org `ratelimit.Middleware` is not mounted anywhere. The limiter works where a limit *is* set (a flat 429 with `retry_after_seconds` has been observed on other keys), so the defect is that the documented **default does not apply** — limiting is opt-in per key or org, which the env var name implies the opposite of |
 | The `allowedModels` gate applies on non-generating surfaces | `/v1/tokens/count` returns `403 model_not_allowed_for_key`, so the gate is not surface-specific — and token-count is therefore a free way to ask what a key may use |
+| **Budget headers round to 2 decimal places, so a small budget reads as `0.00 / 0.00`** | A key capped at $0.0001 reported `x-key-budget-limit: "0.00"` and `x-key-budget-spend: "0.00"` on every call right up to the rejection. The precision exists — the 429 body carries `spend_usd: 0.000127155` and `limit_usd: 0.0001` — but the headers lose it, so a client cannot watch itself approach a sub-cent cap or self-throttle from them |
+| **Budget enforcement is near-real-time, not gated by the spend cache** | The cap tripped on call **#3, 4.9 s** after the first call — not the ~60 s `SPEND_CACHE_TTL_SECONDS` might imply. The enforcer applies an in-flight delta within an instance, so cached spend does not delay it. (Across replicas is a different question this cannot see) |
+| The budget rejection body is rich and correct | `type: insufficient_quota`, `code: key_budget_exceeded`, plus `spend_usd`, `limit_usd`, `period` and `budget_name` — everything a client needs to tell the user which cap they hit |
+| IP allowlist works and is named | A key minted with `ip_allow_list: ["203.0.113.0/24"]` gives `403` / "Your IP address is not allowed", classified `ip-blocked` |
+| Per-key `allowedModels` works | A key restricted to `bedrock-nova-micro` returns 200 for it and `403 model_not_allowed_for_key` naming the refused model for another |
 | Budget headers appear only where a budget exists | `CLIENT_SDK_TESTING` returns no `X-*-Budget-*` on **either** prod or local, so their absence is the key having no budget configured — not a local/prod difference. Budget-cap testing therefore needs a key with a cap, i.e. a minted one |
 | An infrastructure failure gets two different statuses | Mongo unreachable produced a **500 after 5000 ms** in one window and a **503 after 546 ms** in another, neither with a body explaining that this is transient infrastructure |
 | Two keys, two catalogues | `TOOL_CALLING_TEST_0` sees 29 models, `CLIENT_SDK_TESTING` sees 53. Same gateway, same org — the difference is the key's `allowedModels` |
