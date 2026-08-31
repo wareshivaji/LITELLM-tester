@@ -158,6 +158,26 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   function resolveTarget(
     body: TargetBody,
   ): { ok: true; value: ResolvedTarget } | { ok: false; error: string } {
+    // Reject the obvious wrong field names instead of ignoring them.
+    //
+    // Learned the hard way: a caller sending `{profile, key}` instead of
+    // `{profileId, keyAlias}` had both silently dropped, so the run went out
+    // with NO credential, came back 401, and the whole suite reported
+    // `inconclusive` — which reads as "the gateway is down". A lab that
+    // quietly discards your credential and then blames the target is worse
+    // than one that crashes.
+    const misnamed = (['profile', 'key', 'keyName', 'alias', 'apiKey'] as const).filter(
+      (f) => (body as Record<string, unknown>)[f] !== undefined,
+    );
+    if (misnamed.length > 0) {
+      return {
+        ok: false,
+        error:
+          `Unrecognised target field(s): ${misnamed.join(', ')}. ` +
+          `Use "profileId" and "keyAlias" — a dropped credential would run unauthenticated and look like an outage.`,
+      };
+    }
+
     const profileId =
       typeof body.profileId === 'string' ? body.profileId : config.defaultProfileId;
     const profile = registry.profile(profileId);
@@ -1008,6 +1028,21 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       const t = resolveTarget(body);
       if (!t.ok) return reply.status(400).send({ error: t.error });
       const label = typeof body.label === 'string' && body.label.length > 0 ? body.label : t.value.profile.label;
+
+      // A suite run with no credential is never what anyone meant. Every
+      // scenario that is not deliberately `unauthenticated` would come back
+      // 401 and be reported `inconclusive`, which looks exactly like the
+      // gateway being unreachable. Refuse loudly instead.
+      const needsCredential = suite.scenarios.some((sc) => sc.unauthenticated !== true);
+      if (t.value.secret === null && needsCredential) {
+        return reply.status(400).send({
+          error:
+            `Target "${label}" has no credential, but suite "${suite.id}" needs one. ` +
+            `Every authenticated scenario would return 401 and be reported inconclusive, ` +
+            `which is indistinguishable from the gateway being down. Pass "keyAlias".`,
+        });
+      }
+
       resolved.push({ label, target: t.value });
     }
 

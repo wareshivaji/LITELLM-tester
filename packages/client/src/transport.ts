@@ -9,7 +9,7 @@
  */
 
 import { classify } from './classify.js';
-import { maskSecret, redactHeaders, scrubText } from './redact.js';
+import { maskSecret, redactBody, redactHeaders, scrubText } from './redact.js';
 import { parseGatewaySignal } from './signal.js';
 import { SSEParser } from './sse.js';
 import type {
@@ -194,6 +194,19 @@ function tryParseJson(text: string): unknown {
   }
 }
 
+/**
+ * Redact a body a vendor SDK already serialised. Returns the input unchanged if
+ * it is not JSON — a malformed body is often the very thing under test, so
+ * discarding it would destroy the evidence.
+ */
+function redactRawBodyText(raw: string): string {
+  try {
+    return JSON.stringify(redactBody(JSON.parse(raw)));
+  } catch {
+    return raw;
+  }
+}
+
 export class Transport {
   private readonly profile: Profile;
   private readonly keyAlias: string | null;
@@ -275,8 +288,12 @@ export class Transport {
       path: req.path,
       headers: redactHeaders(outgoing),
     };
-    if (req.body !== undefined) recordedRequest.body = req.body;
-    if (bodyText !== undefined) recordedRequest.bodyText = bodyText;
+    // The RECORDED copy is redacted; the `bodyText` returned below is not,
+    // because that is what goes on the wire. Recording a redacted body while
+    // sending the real one is the only correct split — mask what is sent and the
+    // lab is testing a request it never actually made.
+    if (req.body !== undefined) recordedRequest.body = redactBody(req.body);
+    if (bodyText !== undefined) recordedRequest.bodyText = JSON.stringify(redactBody(req.body));
 
     const base = {
       id: newId(),
@@ -340,8 +357,11 @@ export class Transport {
       path: pathOf(req.url),
       headers: redactHeaders(req.headers),
     };
-    if (req.body !== undefined) recordedRequest.body = req.body;
-    if (req.bodyText !== undefined) recordedRequest.bodyText = req.bodyText;
+    if (req.body !== undefined) recordedRequest.body = redactBody(req.body);
+    // A vendor SDK hands us a finished string. Parse it so the same key-aware
+    // redaction applies; if it will not parse, record it unchanged rather than
+    // guessing at its structure — an unparseable body is still evidence.
+    if (req.bodyText !== undefined) recordedRequest.bodyText = redactRawBodyText(req.bodyText);
 
     const base = {
       id: newId(),

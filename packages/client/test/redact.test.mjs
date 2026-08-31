@@ -1,7 +1,7 @@
-import { isSecretHeader, maskSecret, redactHeaders, scrubText } from '../dist/index.js';
+import { isSecretBodyKey, isSecretHeader, maskSecret, redactBody, redactHeaders, scrubText } from '../dist/index.js';
 import { createSuite } from './_harness.mjs';
 
-const { check, done } = createSuite('redaction');
+const { check, truthy, done } = createSuite('redaction');
 
 // An obviously-fake fixture of the right shape. A real key must never be a
 // test fixture: the test file is committed, and BP-500 is not negotiable.
@@ -76,5 +76,131 @@ check(
   scrubText('the quick brown fox', ['fox']),
   'the quick brown fox',
 );
+
+// ── body-level redaction ────────────────────────────────────────────────────
+// The gap this closes: OpenAI's `type:'mcp'` tool block carries a `headers`
+// object aimed at a third-party server, so client-supplied credentials sit in
+// the request BODY where redactHeaders never looks. That body was recorded
+// verbatim and then shown in the exchange log, in copy-as-curl, and in reports.
+
+const mcpToolBody = {
+  model: 'bedrock-nova-micro',
+  tools: [
+    {
+      type: 'mcp',
+      server_label: 'books',
+      server_url: 'https://example.test/mcp',
+      headers: { authorization: 'Bearer cg-ak-REALLOOKINGSECRETVALUE1234', 'x-mcp-token': 'abcdefghijklmnop' },
+    },
+  ],
+  input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] }],
+};
+
+const redactedMcp = redactBody(mcpToolBody);
+
+truthy(
+  'an authorization nested in an MCP tool declaration is masked',
+  !JSON.stringify(redactedMcp).includes('REALLOOKINGSECRETVALUE1234'),
+);
+
+truthy(
+  'an x-mcp-* credential in the same block is masked',
+  !JSON.stringify(redactedMcp).includes('abcdefghijklmnop'),
+);
+
+check(
+  'the surrounding declaration survives intact — only the credential goes',
+  redactedMcp.tools[0].server_url,
+  'https://example.test/mcp',
+);
+
+check(
+  'and the prompt is untouched',
+  redactedMcp.input[0].content[0].text,
+  'hi',
+);
+
+// The important one. If redaction mutated the caller's object, the lab would
+// send a masked credential to the gateway and then report on a request nobody
+// made.
+check(
+  'redactBody never mutates its input',
+  mcpToolBody.tools[0].headers.authorization,
+  'Bearer cg-ak-REALLOOKINGSECRETVALUE1234',
+);
+
+// A JSON Schema may legitimately have a property named `token`, whose value is
+// an object describing a field rather than a credential. Masking it would
+// corrupt the recorded schema for no safety gain.
+const schemaBody = {
+  tools: [
+    {
+      type: 'function',
+      function: {
+        name: 'auth',
+        parameters: { type: 'object', properties: { token: { type: 'string' }, password: { type: 'string' } } },
+      },
+    },
+  ],
+};
+check(
+  'an object under a secret-looking key is recursed into, not flattened',
+  redactBody(schemaBody).tools[0].function.parameters.properties.token.type,
+  'string',
+);
+
+check(
+  'a string value under the same key IS masked',
+  redactBody({ token: 'sk-supersecretvalue123456' }).token.includes('supersecret'),
+  false,
+);
+
+// A body credential must reveal NOTHING of itself. maskSecret keeps the first
+// ten characters, which is safe for cg-ak-* where that prefix is public and a
+// disclosure for anything else: a 14-char password came back as
+// `hunter2hun…ter2`. Caught by the array test below, which is why it is here.
+check(
+  'no fragment of a body credential survives, however short',
+  redactBody({ password: 'hunter2hunter2' }).password,
+  '************',
+);
+
+check(
+  'the auth scheme is kept — Bearer vs Basic is a debugging signal, not a secret',
+  redactBody({ authorization: 'Bearer cg-ak-abcdefghijklmnop' }).authorization,
+  'Bearer ************',
+);
+
+truthy(
+  'and no part of the key itself remains',
+  !redactBody({ authorization: 'Bearer cg-ak-abcdefghijklmnop' }).authorization.includes('cg-ak-'),
+);
+
+// Fixed width, not the value's length: a 14-character password that masked to
+// 14 asterisks would still say "this secret is short".
+check(
+  'the mask width is fixed, so it discloses nothing about length',
+  [
+    redactBody({ api_key: 'x'.repeat(400) }).api_key,
+    redactBody({ api_key: 'short' }).api_key,
+  ],
+  ['************', '************'],
+);
+
+truthy('nested arrays are walked', Array.isArray(redactBody({ a: [{ password: 'hunter2hunter2' }] }).a));
+check(
+  'and a credential inside an array element is masked',
+  redactBody({ a: [{ password: 'hunter2hunter2' }] }).a[0].password.includes('hunter2'),
+  false,
+);
+
+check('primitives pass through', redactBody(42), 42);
+check('null passes through', redactBody(null), null);
+check('a bare string is not a body key, so it is untouched', redactBody('authorization'), 'authorization');
+
+truthy('isSecretBodyKey covers header names too', isSecretBodyKey('x-mcp-authorization'));
+truthy('and body-only names', isSecretBodyKey('client_secret'));
+check('but not ordinary fields', isSecretBodyKey('max_tokens'), false);
+check('nor a similarly-spelled field', isSecretBodyKey('max_completion_tokens'), false);
 
 done();
