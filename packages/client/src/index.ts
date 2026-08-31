@@ -44,4 +44,13 @@ export type {
   MintedKeySummary,
 } from './management.js';
 export { CROSS_PROVIDER_PROBES, GATES, gateById } from './governance.js';
+export {
+  checkToolCalls,
+  extractToolCalls,
+  looksSwallowed,
+  summariseTurn,
+  TOOL_PRESETS,
+  toolPresetById,
+} from './tools.js';
+export type { ToolCall, ToolCallIssue, ToolPreset, ToolTurn } from './tools.js';
 export type { Gate } from './governance.js';

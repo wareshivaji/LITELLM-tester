@@ -12,6 +12,7 @@ import type {
   SdkMode,
   SdkOutcome,
   StreamChunk,
+  ToolTurn,
   Verdict,
 } from '@tokenshield/client';
 
@@ -65,6 +66,21 @@ export interface ProbeResult {
     detail: string;
     exchangeId: string;
   }>;
+}
+
+export interface ToolLoopResult {
+  turns: ToolTurn[];
+  offered: string[];
+  executed: Array<{ name: string; result: unknown }>;
+  calledNothing: boolean;
+  /** The gateway answered a client tool on the model's behalf. */
+  swallowed: boolean;
+  finalText: string | null;
+}
+
+export interface McpBrowseResult {
+  servers: { status: number | null; verdict: Verdict; body: unknown; exchangeId: string };
+  tools: { status: number | null; verdict: Verdict; body: unknown; exchangeId: string };
 }
 
 export interface RunsResponse {
@@ -219,6 +235,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  /** A full client-declared tool conversation. Spends. */
+  toolLoop: (
+    body: TargetRef & { model: string; prompt: string; tools: string[]; toolChoice: string },
+  ) => json<ToolLoopResult>('/api/tools/loop', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** Servers and tools this key can see. Free. */
+  mcpBrowse: (body: TargetRef) =>
+    json<McpBrowseResult>('/api/mcp/browse', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** tools/list over the Streamable-HTTP aggregate, as an MCP client would. */
+  mcpAggregate: (body: TargetRef) =>
+    json<Exchange>('/api/mcp/aggregate', { method: 'POST', body: JSON.stringify(body) }),
 
   runs: (limit = 50) => json<RunsResponse>(`/api/runs?limit=${limit}`),
 

@@ -17,9 +17,14 @@ import {
   runPreflight,
   runWithSdk,
   sdkModesFor,
+  extractToolCalls,
+  looksSwallowed,
+  readOutput,
   summariseMintedKey,
+  summariseTurn,
   surfaceById,
   TokenShieldClient,
+  toolPresetById,
 } from '@tokenshield/client';
 import type {
   AuthScheme,
@@ -29,6 +34,7 @@ import type {
   Profile,
   SdkMode,
   SdkOutcome,
+  ToolTurn,
 } from '@tokenshield/client';
 import type { FastifyInstance } from 'fastify';
 
@@ -65,6 +71,21 @@ interface BurstBody extends TargetBody {
 
 interface ProbeBody extends TargetBody {
   models?: unknown;
+}
+
+interface ToolLoopBody extends TargetBody {
+  model?: unknown;
+  prompt?: unknown;
+  tools?: unknown;
+  toolChoice?: unknown;
+}
+
+type McpBody = TargetBody;
+
+interface McpCallBody extends TargetBody {
+  server?: unknown;
+  name?: unknown;
+  arguments?: unknown;
 }
 
 interface AddProfileBody {
@@ -631,6 +652,188 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     }
 
     return { results };
+  });
+
+  // ── Tools & MCP ────────────────────────────────────────────────────────────
+
+  /**
+   * Run a client-declared tool conversation to completion.
+   *
+   * Turn 1 offers `tools[]`. If the model answers with calls, they are executed
+   * against the canned local implementations and the results are sent back as a
+   * second turn. Both exchanges are recorded, so the timeline shows what the
+   * client actually had to do to get one reply.
+   *
+   * The thing this is really asking: **does a client's own tool call reach the
+   * client?** An org with MCP servers enabled runs its own tool loop, and a tool
+   * absent from the gateway's MCP index may be answered on the model's behalf
+   * rather than handed back — which would make client-declared tools unusable
+   * for that org without anything ever returning an error.
+   */
+  app.post<{ Body: ToolLoopBody }>('/api/tools/loop', async (request, reply) => {
+    const raw = request.body ?? {};
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const model = typeof raw.model === 'string' ? raw.model : '';
+    if (model.length === 0) return reply.status(400).send({ error: 'A model is required.' });
+
+    const presetIds = Array.isArray(raw.tools)
+      ? raw.tools.filter((t): t is string => typeof t === 'string')
+      : ['get_weather'];
+    const presets = presetIds
+      .map((id) => toolPresetById(id))
+      .filter((p): p is NonNullable<typeof p> => p !== undefined);
+    if (presets.length === 0) return reply.status(400).send({ error: 'Pick at least one tool.' });
+
+    const surface = surfaceById('chat.completions');
+    if (surface === undefined) return reply.status(500).send({ error: 'chat surface missing' });
+
+    const prompt =
+      typeof raw.prompt === 'string' && raw.prompt.length > 0
+        ? raw.prompt
+        : 'What is the weather in Paris?';
+
+    const messages: unknown[] = [{ role: 'user', content: prompt }];
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      max_tokens: 256,
+      tools: presets.map((p) => p.definition),
+    };
+    if (typeof raw.toolChoice === 'string' && raw.toolChoice !== 'auto') {
+      // A named choice is `{type:'function',function:{name}}`; 'none'/'required'
+      // are bare strings. Passed through exactly as a client would send them.
+      body['tool_choice'] =
+        raw.toolChoice === 'none' || raw.toolChoice === 'required'
+          ? raw.toolChoice
+          : { type: 'function', function: { name: raw.toolChoice } };
+    }
+
+    const client = clientFor(target.value);
+    const turns: ToolTurn[] = [];
+    const offered = presets.map((p) => p.id);
+
+    const first = await client.call(surface, body);
+    store.add(first);
+    turns.push(summariseTurn(1, 'request', first, readOutput('chat.completions', first.response?.body).text));
+
+    const calls = extractToolCalls(first.response?.body);
+    const executed: Array<{ name: string; result: unknown }> = [];
+
+    if (calls.length > 0) {
+      // Echo the assistant turn back verbatim, then one tool message per call —
+      // exactly the shape the OpenAI SDK builds.
+      const assistantMessage = (() => {
+        const b = first.response?.body;
+        if (typeof b === 'object' && b !== null) {
+          const choices = (b as { choices?: unknown }).choices;
+          if (Array.isArray(choices) && typeof choices[0] === 'object' && choices[0] !== null) {
+            return (choices[0] as { message?: unknown }).message;
+          }
+        }
+        return undefined;
+      })();
+      if (assistantMessage !== undefined) messages.push(assistantMessage);
+
+      for (const call of calls) {
+        const preset = toolPresetById(call.name);
+        const result = preset !== undefined ? preset.run(call.argumentsParsed) : { error: `no local implementation for ${call.name}` };
+        executed.push({ name: call.name, result });
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+      }
+
+      const followUp: Record<string, unknown> = {
+        model,
+        messages,
+        max_tokens: 256,
+        tools: presets.map((p) => p.definition),
+      };
+      const second = await client.call(surface, followUp);
+      store.add(second);
+      turns.push(
+        summariseTurn(2, 'tool-results', second, readOutput('chat.completions', second.response?.body).text),
+      );
+    }
+
+    const finalText = turns[turns.length - 1]?.text;
+    const swallowed = calls.length === 0 && looksSwallowed(finalText, offered);
+
+    app.log.info(
+      `tool loop ${model} tools=[${offered.join(',')}] → ${calls.length} call(s), ${turns.length} turn(s)` +
+        (swallowed ? ' — SWALLOWED' : ''),
+    );
+
+    return {
+      turns,
+      offered,
+      executed,
+      calledNothing: calls.length === 0,
+      swallowed,
+      finalText: finalText ?? null,
+    };
+  });
+
+  /** The MCP surfaces this key can see. All free — no provider involved. */
+  app.post<{ Body: McpBody }>('/api/mcp/browse', async (request, reply) => {
+    const target = resolveTarget(request.body ?? {});
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const client = clientFor(target.value);
+    const [servers, tools] = await Promise.all([client.mcpListServers(), client.mcpListTools()]);
+    store.add(servers);
+    store.add(tools);
+
+    return {
+      servers: {
+        status: servers.response?.status ?? null,
+        verdict: servers.verdict,
+        body: servers.response?.body ?? null,
+        exchangeId: servers.id,
+      },
+      tools: {
+        status: tools.response?.status ?? null,
+        verdict: tools.verdict,
+        body: tools.response?.body ?? null,
+        exchangeId: tools.id,
+      },
+    };
+  });
+
+  /** Invoke one MCP tool directly, with no model in the loop. */
+  app.post<{ Body: McpCallBody }>('/api/mcp/call', async (request, reply) => {
+    const raw = request.body ?? {};
+    const target = resolveTarget(raw);
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const server = typeof raw.server === 'string' ? raw.server : '';
+    const name = typeof raw.name === 'string' ? raw.name : '';
+    if (server.length === 0 || name.length === 0) {
+      return reply.status(400).send({ error: 'server and name are both required.' });
+    }
+
+    const exchange = await clientFor(target.value).mcpCallTool(server, name, raw.arguments ?? {});
+    store.add(exchange);
+    return exchange;
+  });
+
+  /** The Streamable-HTTP aggregate, as an off-the-shelf MCP client would speak it. */
+  app.post<{ Body: TargetBody }>('/api/mcp/aggregate', async (request, reply) => {
+    const target = resolveTarget(request.body ?? {});
+    if (!target.ok) return reply.status(400).send({ error: target.error });
+
+    const exchange = await clientFor(target.value).mcpAggregate({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: {},
+    });
+    store.add(exchange);
+    return exchange;
   });
 
   // ── History ────────────────────────────────────────────────────────────────

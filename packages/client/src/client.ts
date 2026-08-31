@@ -111,6 +111,57 @@ export class TokenShieldClient {
     });
   }
 
+  // ── MCP ────────────────────────────────────────────────────────────────
+  //
+  // The gateway exposes MCP two ways: a REST-ish surface for a console to
+  // browse and invoke tools, and URL-addressable Streamable-HTTP endpoints for
+  // off-the-shelf MCP clients. All of it is authenticated with the same cg-ak-
+  // key, so what a key can see here is part of its entitlement.
+
+  /** `GET /v1/mcp/servers` — enabled servers for this key, tools discovered live. */
+  mcpListServers(): Promise<Exchange> {
+    return this.transport.send({ surface: 'mcp.servers', method: 'GET', path: '/v1/mcp/servers' });
+  }
+
+  /** `GET /v1/mcp/tools` — every tool this key can reach, flattened. */
+  mcpListTools(): Promise<Exchange> {
+    return this.transport.send({ surface: 'mcp.tools', method: 'GET', path: '/v1/mcp/tools' });
+  }
+
+  /** `POST /v1/mcp/servers/test` — probe a registered server with its stored credential. */
+  mcpTestServer(server: string): Promise<Exchange> {
+    return this.transport.send({
+      surface: 'mcp.servers.test',
+      method: 'POST',
+      path: '/v1/mcp/servers/test',
+      body: { server },
+    });
+  }
+
+  /** `POST /v1/mcp/tools/call` — invoke one tool directly, no model in the loop. */
+  mcpCallTool(server: string, name: string, args: unknown): Promise<Exchange> {
+    return this.transport.send({
+      surface: 'mcp.tools.call',
+      method: 'POST',
+      path: '/v1/mcp/tools/call',
+      body: { server, name, arguments: args },
+    });
+  }
+
+  /**
+   * `POST /v1/mcp` — the Streamable-HTTP aggregate, spoken by off-the-shelf MCP
+   * clients. Takes a JSON-RPC envelope; `tools/list` is the useful probe.
+   */
+  mcpAggregate(rpc: unknown): Promise<Exchange> {
+    return this.transport.send({
+      surface: 'mcp.aggregate',
+      method: 'POST',
+      path: '/v1/mcp',
+      body: rpc,
+      accept: 'application/json, text/event-stream',
+    });
+  }
+
   /**
    * The same call, read as a stream. The body is still passed through
    * untouched — including whether it says `stream: true`, which is the

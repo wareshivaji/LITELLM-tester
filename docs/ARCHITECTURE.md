@@ -284,7 +284,7 @@ hardening.
 | 3 | Streaming — SSE parser, relay, timeline, conformance | **Done** | 13/13 (+20 unit) | `4210c0c` |
 | 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | **Done** | 13/13 | `4e917d3` |
 | 5 | Governance lab + key minting via management key | **Built**, 5/11 concluded | 5/11 | pending |
-| 6 | Tools & MCP | Not started | — | — |
+| 6 | Tools & MCP | **Done** | 8/8 | pending |
 | 7 | Scenario runner, Compare, report export | Not started | — | — |
 | 8 | Docs, ESLint, unit tests, BP checklist | Not started | — | — |
 
@@ -322,6 +322,8 @@ Recorded because they are the reason the tests exist.
 | 3 | Every stream aborted itself ~1.5 ms in | AD-11 — listen on the response stream |
 | 3 | A non-SSE answer to a streaming request was discarded | AD-12 — switch on `content-type` |
 | 3 | An aborted stream lost its `X-Request-ID` | capture headers when they arrive, keep them on the error path |
+| 5 | The rate-limit burst had no early abort — 80 × 5 s of timeouts | AD-21 — abandon after 3 consecutive non-200/non-429 |
+| 6 | Flagged missing `index` on **buffered** tool calls as a conformance failure | False positive: `index` exists only on streaming deltas, never on `tool_calls[]` in a buffered response. Check removed from `tools.ts`; the real one stays in `stream.ts` |
 
 ---
 
@@ -329,6 +331,18 @@ Recorded because they are the reason the tests exist.
 
 What the tool has established about TokenShield. Measured against **Prod US** on
 `bedrock-nova-micro` with a Bedrock-scoped key, on the dates given.
+
+### Tools and MCP (Phase 6)
+
+Measured on Prod US, `bedrock-nova-micro`, key `CLIENT_SDK_TESTING`, 2026-08-28.
+
+| Finding | Detail |
+|---|---|
+| **A named `tool_choice` does not restrict** | Offering `get_weather` + `get_time`, prompting only about weather, and forcing `tool_choice: {function:{name:"get_time"}}` produced **both** calls. Naming a tool is supposed to compel that tool and only that tool; here it compels *at least* it. A client relying on the restriction to keep a tool out of reach does not get that guarantee |
+| `GET /v1/mcp/servers` cannot distinguish "none configured" from "discovery failed" | Prod answers `{"servers":[]}` / `{"tools":[]}` with a 200. On the local gateway the log showed three servers registered and discovery actually failing (`upstream returned 401 unauthorized: missing_token`) — and the same surface would still report an empty list. A customer sees "you have no MCP servers" either way |
+| The client tool round trip works, and the swallow did **not** reproduce | One tool offered → `finish_reason: tool_calls`, a call with a usable `id` and valid JSON arguments, results posted back, final answer incorporating them. The known `resolveCall` swallow needs **≥1 enabled MCP server in the key's scope**, and this key has none — so the precondition is absent, not the bug disproven. Re-test on an org with a working MCP server |
+| Parallel tool calls work | Two tools offered, one prompt, two calls in a single turn, each with its own id and parsed arguments |
+| `tool_choice: none` and `required` behave correctly | `none` produced prose and no calls; `required` forced a call even for "Say hello" (the model invented an argument, which is expected when compelled) |
 
 ### Governance (Phase 5)
 

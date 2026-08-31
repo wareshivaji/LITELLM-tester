@@ -10,6 +10,7 @@ import { Playground } from './pages/Playground';
 import { Governance } from './pages/Governance';
 import { SdkCompare } from './pages/SdkCompare';
 import { Streaming } from './pages/Streaming';
+import { ToolsMcp } from './pages/ToolsMcp';
 
 /**
  * The seven pages of the lab. Everything past the current phase is shown, not
@@ -25,7 +26,7 @@ const NAV: ReadonlyArray<{ id: string; label: string; phase: number }> = [
   { id: 'scenarios', label: 'Scenarios', phase: 7 },
 ];
 
-const CURRENT_PHASE = 5;
+const CURRENT_PHASE = 6;
 
 export function App() {
   const [config, setConfig] = useState<LabConfigResponse | null>(null);
@@ -205,6 +206,13 @@ export function App() {
         <main className="min-h-0 flex-1 space-y-5 overflow-auto p-6">
           {page === 'playground' ? (
             <Playground
+              profileId={profileId}
+              keyAlias={keyAlias}
+              scheme={scheme}
+              onRecorded={refreshRuns}
+            />
+          ) : page === 'tools' ? (
+            <ToolsMcp
               profileId={profileId}
               keyAlias={keyAlias}
               scheme={scheme}
