@@ -32,14 +32,35 @@ Then open **http://127.0.0.1:5173**.
 
 ### Stopping the lab
 
-Ctrl+C in the terminal usually does it. It does not always take the child processes with it —
-`tsx watch` and Vite both spawn one — so if a port is still held afterwards:
+**Ctrl+C in the terminal running `npm run dev`.** That is the real answer, because
+`concurrently`, `tsx watch` and `vite` are all *supervisors*: they exist to restart their child
+when it dies. Ctrl+C signals the supervisor, so the whole tree goes.
+
+**Killing by port does not stop it.** `npx kill-port 8787` kills the server process, `tsx watch`
+notices its child died, and starts a new one — the port is back within a second, and you have
+learned nothing except that the tool is haunted. Reach for the port only when the supervisor is
+already gone and a genuinely orphaned child is left holding it:
 
 ```bash
 npx kill-port 8787 5173
 ```
 
-That is the command to reach for whenever a restart complains the port is in use.
+If Ctrl+C is not available (a detached run, a lost terminal), kill the **supervisor** by name
+rather than the port:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+  Where-Object { $_.CommandLine -like '*tokenshield-client-sdk*' -and
+                 ($_.CommandLine -like '*tsx*' -or $_.CommandLine -like '*vite*' -or $_.CommandLine -like '*concurrently*') } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+The same applies to the gateway: `go run` supervises a child `gateway.exe`, so killing the child
+or the port is not enough — stop both:
+
+```powershell
+Get-Process go,gateway -ErrorAction SilentlyContinue | Stop-Process -Force
+```
 
 ---
 

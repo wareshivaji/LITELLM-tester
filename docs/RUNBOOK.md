@@ -9,12 +9,24 @@ For what the pages are and how to walk through them, see [USER_GUIDE.md](USER_GU
 ## Starting and stopping
 
 ```bash
-npm run dev                 # SDK build, then backend (8787) + UI (5173)
-npx kill-port 8787 5173     # stop, including children Ctrl+C leaves behind
+npm run dev     # SDK build, then backend (8787) + UI (5173)
 ```
 
-`tsx watch` and Vite each spawn a child process, so Ctrl+C does not always free the ports. When a
-restart says the port is in use, that is why.
+**Stop it with Ctrl+C in that terminal.** `concurrently`, `tsx watch` and `vite` are supervisors —
+their whole job is to restart the child when it dies — so killing the process that holds a port
+just makes the supervisor start another one, and the port is back within a second. Ctrl+C signals
+the supervisor and the tree goes with it.
+
+`npx kill-port 8787 5173` is only for the case where the supervisor is *already* gone and an
+orphaned child is left holding the port. If you need to stop a running supervisor without its
+terminal, target it by name:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+  Where-Object { $_.CommandLine -like '*tokenshield-client-sdk*' -and
+                 ($_.CommandLine -like '*tsx*' -or $_.CommandLine -like '*vite*' -or $_.CommandLine -like '*concurrently*') } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
 
 Running a local gateway alongside:
 
@@ -110,7 +122,7 @@ result from one surface to another.
 | `ECONNREFUSED — nothing is listening at http://localhost:4000` | The local gateway is not running |
 | Every `/v1/*` call is a 500 after exactly 5000 ms | The gateway is up but cannot reach its auth store |
 | A 503 in ~500 ms | Same root cause, different path. Both are infrastructure, neither says so |
-| `Port 8787 is already in use` | A `tsx watch` child outlived its terminal |
+| `Port 8787 is already in use` | A `tsx watch` supervisor is still alive and has restarted its child. Killing the port holder will not help — stop the supervisor |
 | Suite rows all say `blocked` | The key is not valid on that gateway |
 | The model picker is empty | No key selected, or the key was refused |
 
