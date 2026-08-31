@@ -11,6 +11,8 @@ import type {
   MintedKeySummary,
   SdkMode,
   SdkOutcome,
+  ScenarioReport,
+  ScenarioResult,
   StreamChunk,
   ToolTurn,
   Verdict,
@@ -172,6 +174,67 @@ async function streamSurface(
   dispatch(parser.flush(0));
 }
 
+/**
+ * Runs a suite, reading results as they land.
+ *
+ * Same relay shape as the streaming page, parsed with the same SDK SSEParser —
+ * so a suite of thirty scenarios shows progress instead of a spinner.
+ */
+async function runScenarios(
+  body: {
+    suiteId: string;
+    targets: Array<TargetRef & { label: string }>;
+    model: string;
+    embedModel: string;
+    paceMs: number;
+    includeSpending: boolean;
+  },
+  handlers: {
+    onStart: (s: { total: number; skippedSpending: number }) => void;
+    onResult: (r: ScenarioResult) => void;
+    onDone: (report: ScenarioReport) => void;
+    onError: (message: string) => void;
+    signal?: AbortSignal;
+  },
+): Promise<void> {
+  const res = await fetch('/api/scenarios/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    ...(handlers.signal !== undefined ? { signal: handlers.signal } : {}),
+  });
+  if (!res.ok || res.body === null) {
+    const text = await res.text();
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      message = (JSON.parse(text) as { error?: string }).error ?? message;
+    } catch {
+      if (text.length > 0) message = text;
+    }
+    handlers.onError(message);
+    return;
+  }
+
+  const parser = new SSEParser();
+  const reader = res.body.getReader();
+  const dispatch = (frames: StreamChunk[]): void => {
+    for (const f of frames) {
+      if (f.event === 'start') handlers.onStart(f.parsed as { total: number; skippedSpending: number });
+      else if (f.event === 'result') handlers.onResult(f.parsed as ScenarioResult);
+      else if (f.event === 'done') handlers.onDone(f.parsed as ScenarioReport);
+      else if (f.event === 'error') {
+        handlers.onError((f.parsed as { error?: string })?.error ?? 'Suite error');
+      }
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value !== undefined) dispatch(parser.push(value, 0));
+  }
+  dispatch(parser.flush(0));
+}
+
 export const api = {
   config: () => json<LabConfigResponse>('/api/config'),
 
@@ -248,6 +311,12 @@ export const api = {
   /** tools/list over the Streamable-HTTP aggregate, as an MCP client would. */
   mcpAggregate: (body: TargetRef) =>
     json<Exchange>('/api/mcp/aggregate', { method: 'POST', body: JSON.stringify(body) }),
+
+  runScenarios,
+
+  /** Writes the last report to out/ as JSON and Markdown. The only disk write. */
+  exportReport: () =>
+    json<{ jsonPath: string; mdPath: string }>('/api/scenarios/export', { method: 'POST' }),
 
   runs: (limit = 50) => json<RunsResponse>(`/api/runs?limit=${limit}`),
 

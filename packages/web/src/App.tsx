@@ -8,6 +8,7 @@ import { ExchangeLog } from './components/ExchangeLog';
 import { Connect } from './pages/Connect';
 import { Playground } from './pages/Playground';
 import { Governance } from './pages/Governance';
+import { Scenarios } from './pages/Scenarios';
 import { SdkCompare } from './pages/SdkCompare';
 import { Streaming } from './pages/Streaming';
 import { ToolsMcp } from './pages/ToolsMcp';
@@ -26,7 +27,7 @@ const NAV: ReadonlyArray<{ id: string; label: string; phase: number }> = [
   { id: 'scenarios', label: 'Scenarios', phase: 7 },
 ];
 
-const CURRENT_PHASE = 6;
+const CURRENT_PHASE = 7;
 
 export function App() {
   const [config, setConfig] = useState<LabConfigResponse | null>(null);
@@ -206,6 +207,14 @@ export function App() {
         <main className="min-h-0 flex-1 space-y-5 overflow-auto p-6">
           {page === 'playground' ? (
             <Playground
+              profileId={profileId}
+              keyAlias={keyAlias}
+              scheme={scheme}
+              onRecorded={refreshRuns}
+            />
+          ) : page === 'scenarios' ? (
+            <Scenarios
+              config={config}
               profileId={profileId}
               keyAlias={keyAlias}
               scheme={scheme}

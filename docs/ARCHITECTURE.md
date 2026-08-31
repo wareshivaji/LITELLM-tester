@@ -240,6 +240,25 @@ registers it in the in-memory registry, and runs the Exchange through `redactMin
 it reaches the store. The browser receives an alias and a mask, never the value. The scrub runs on
 the failure path too, where a partial body might still carry something.
 
+### AD-22 · A landmine scenario inverts the meaning of a pass
+**Why.** A scenario marked `landmine` describes behaviour believed *wrong today*, so its
+expectation matching means the bug is still there — reported `landmine-present`, never as a
+success. When it stops matching the behaviour moved and a human should look: `landmine-changed`.
+Same signal the Python suite gets from a strict `xfail`, and it is why an all-green suite here
+would be suspicious rather than reassuring.
+**Consequence, found by the first two-target run.** Running a suite against a gateway where the
+key is not valid turns every request into a 401 — and each landmine was then reported
+`landmine-changed`, which reads as "possibly fixed here". It was not: nothing had been measured.
+A scenario whose observed verdict is `auth` or `server-error`, where it did not expect one, is now
+`inconclusive`. Scenarios that *expect* an auth failure are exempt, since for those the 401 is the
+answer rather than an obstacle.
+
+### AD-23 · Compare is the scenario runner with two targets, not a separate page
+**Why.** "Run the same request against two gateways and diff it" and "run a suite" are the same
+operation with a different number of targets. One mechanism means the comparison inherits
+expectations, landmine semantics and export for free, and every row carries the target that
+produced it — a result without its target is not evidence.
+
 ### AD-21 · The rate-limit burst uses a free endpoint, and gives up early
 **Why (free).** `GET /v1/models` runs the whole middleware chain — auth, ip allowlist, rate limit —
 but calls no provider. That is the only reason bursting eighty requests is safe to offer as a
@@ -285,7 +304,7 @@ hardening.
 | 4 | Vendor SDK adapters (`openai`, `@anthropic-ai/sdk`) | **Done** | 13/13 | `4e917d3` |
 | 5 | Governance lab + key minting via management key | **Built**, 5/11 concluded | 5/11 | pending |
 | 6 | Tools & MCP | **Done** | 8/8 | `ad5bddd` |
-| 7 | Scenario runner, Compare, report export | Not started | — | — |
+| 7 | Scenario runner, Compare, report export | **Done** | 8/8 | pending |
 | 8 | Docs, ESLint, unit tests, BP checklist | Not started | — | — |
 
 **Working agreement.** One phase at a time: build, stop, wait for "start next". Test cases are
@@ -305,6 +324,13 @@ presented for approval **before** they run. Nothing is pushed without an explici
 - **Phase 3** — 20 parser assertions; non-streamable surface rejected; 401 on the streaming path;
   chat / Responses / Anthropic streams; `include_usage`; frame conformance; timing; `stream:false`;
   client abort; request-id retention.
+- **Phase 7** — three suites (14 scenarios) run individually and free-only; two-target compare
+  against Prod US and Mumbai; a deliberate expectation break; mid-run stop; export to `out/` as
+  JSON and Markdown. Landmine semantics verified: LM-1 and LM-3 report `landmine-present` on Prod
+  US rather than as failures.
+- **Phase 6** — MCP browse and aggregate; the swallow test; parallel calls; three `tool_choice`
+  modes.
+- **Phase 5** — mint refusals; the model-permission probe; the RPM burst; ring-buffer containment.
 - **Phase 4** — mode legality per surface; illegal mode rejected; auth failure through both vendor
   SDKs; the flat 501 envelope through the OpenAI SDK, with and without retries; raw vs SDK on chat,
   messages, embeddings and Responses; `stop` as a string and `n=2` through the typed SDK; no retry
@@ -323,6 +349,7 @@ Recorded because they are the reason the tests exist.
 | 3 | A non-SSE answer to a streaming request was discarded | AD-12 — switch on `content-type` |
 | 3 | An aborted stream lost its `X-Request-ID` | capture headers when they arrive, keep them on the error path |
 | 5 | The rate-limit burst had no early abort — 80 × 5 s of timeouts | AD-21 — abandon after 3 consecutive non-200/non-429 |
+| 7 | Landmines on an unreachable target reported as `landmine-changed` — reads as "maybe fixed" when nothing was measured | AD-22 — new `inconclusive` outcome |
 | 6 | Flagged missing `index` on **buffered** tool calls as a conformance failure | False positive: `index` exists only on streaming deltas, never on `tool_calls[]` in a buffered response. Check removed from `tools.ts`; the real one stays in `stream.ts` |
 
 ---

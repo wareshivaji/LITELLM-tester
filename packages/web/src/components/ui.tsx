@@ -2,6 +2,9 @@ import type { ReactNode } from 'react';
 
 import type { CheckStatus, VerdictKind } from '@tokenshield/client';
 
+/** Re-exported so pages can type their own outcome→tone maps. */
+export type CheckStatusLike = CheckStatus;
+
 export function Card({
   title,
   subtitle,

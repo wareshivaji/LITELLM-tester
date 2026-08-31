@@ -53,4 +53,21 @@ export {
   toolPresetById,
 } from './tools.js';
 export type { ToolCall, ToolCallIssue, ToolPreset, ToolTurn } from './tools.js';
+export {
+  checkExpectation,
+  evaluateScenario,
+  reportToMarkdown,
+  SUITES,
+  suiteById,
+  tally,
+} from './scenarios.js';
+export type {
+  Expectation,
+  Scenario,
+  ScenarioContext,
+  ScenarioOutcome,
+  ScenarioReport,
+  ScenarioResult,
+  Suite,
+} from './scenarios.js';
 export type { Gate } from './governance.js';

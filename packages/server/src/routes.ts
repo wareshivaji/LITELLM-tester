@@ -17,9 +17,14 @@ import {
   runPreflight,
   runWithSdk,
   sdkModesFor,
+  evaluateScenario,
   extractToolCalls,
   looksSwallowed,
   readOutput,
+  reportToMarkdown,
+  suiteById,
+  SUITES,
+  tally,
   summariseMintedKey,
   summariseTurn,
   surfaceById,
@@ -32,12 +37,18 @@ import type {
   Exchange,
   PreflightResult,
   Profile,
+  ScenarioReport,
+  ScenarioResult,
   SdkMode,
   SdkOutcome,
   ToolTurn,
 } from '@tokenshield/client';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
 import type { FastifyInstance } from 'fastify';
 
+import { REPO_ROOT } from './config.js';
 import type { LabConfig } from './config.js';
 import type { TargetRegistry } from './registry.js';
 import type { RunStore } from './store.js';
@@ -88,6 +99,15 @@ interface McpCallBody extends TargetBody {
   arguments?: unknown;
 }
 
+interface ScenarioRunBody {
+  suiteId?: unknown;
+  targets?: unknown;
+  model?: unknown;
+  embedModel?: unknown;
+  paceMs?: unknown;
+  includeSpending?: unknown;
+}
+
 interface AddProfileBody {
   label?: unknown;
   baseUrl?: unknown;
@@ -120,6 +140,9 @@ export interface RouteDeps {
 
 export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, registry, store } = deps;
+
+  /** The most recent suite run, held for export. In memory like everything else. */
+  let lastReport: ScenarioReport | null = null;
 
   /**
    * Every call-making route resolves its target the same way, so a profile or
@@ -834,6 +857,177 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     });
     store.add(exchange);
     return exchange;
+  });
+
+  // ── Scenarios ──────────────────────────────────────────────────────────────
+
+  app.get('/api/scenarios/suites', () =>
+    SUITES.map((s) => ({
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      scenarios: s.scenarios.map((sc) => ({
+        id: sc.id,
+        title: sc.title,
+        why: sc.why,
+        surface: sc.surface,
+        spends: sc.spends,
+        ...(sc.landmine !== undefined ? { landmine: sc.landmine } : {}),
+      })),
+    })),
+  );
+
+  /**
+   * Run a suite against one or more targets, streaming each result as it lands.
+   *
+   * Sequential on purpose, with an optional pace between calls. Running a suite
+   * concurrently would finish sooner and tell you less: where a key does have an
+   * RPM cap, a burst turns half the suite into 429s that have nothing to do with
+   * the scenarios being asked.
+   *
+   * Two targets in one run is how the same suite becomes a comparison — the same
+   * questions asked of local and prod, with the target named on every row.
+   */
+  app.post<{ Body: ScenarioRunBody }>('/api/scenarios/run', async (request, reply) => {
+    const raw = request.body ?? {};
+
+    const suite = suiteById(typeof raw.suiteId === 'string' ? raw.suiteId : '');
+    if (suite === undefined) return reply.status(400).send({ error: 'Unknown suite' });
+
+    const rawTargets = Array.isArray(raw.targets) ? raw.targets : [];
+    if (rawTargets.length === 0) return reply.status(400).send({ error: 'Pick at least one target.' });
+
+    const resolved: Array<{ label: string; target: ResolvedTarget }> = [];
+    for (const entry of rawTargets) {
+      const body = (typeof entry === 'object' && entry !== null ? entry : {}) as TargetBody & {
+        label?: unknown;
+      };
+      const t = resolveTarget(body);
+      if (!t.ok) return reply.status(400).send({ error: t.error });
+      const label = typeof body.label === 'string' && body.label.length > 0 ? body.label : t.value.profile.label;
+      resolved.push({ label, target: t.value });
+    }
+
+    const ctx = {
+      model: typeof raw.model === 'string' && raw.model.length > 0 ? raw.model : 'bedrock-nova-micro',
+      embedModel:
+        typeof raw.embedModel === 'string' && raw.embedModel.length > 0
+          ? raw.embedModel
+          : 'bedrock-titan-embed-v2',
+    };
+    const paceMs = typeof raw.paceMs === 'number' ? Math.min(Math.max(raw.paceMs, 0), 5000) : 0;
+    const includeSpending = raw.includeSpending !== false;
+
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const emit = (event: string, data: unknown): void => {
+      if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    let cancelled = false;
+    res.on('close', () => {
+      cancelled = true;
+    });
+
+    const scenarios = suite.scenarios.filter((s) => includeSpending || !s.spends);
+    const results: ScenarioResult[] = [];
+    const startedAt = new Date().toISOString();
+    const t0 = Date.now();
+
+    emit('start', {
+      suiteId: suite.id,
+      total: scenarios.length * resolved.length,
+      skippedSpending: suite.scenarios.length - scenarios.length,
+    });
+
+    try {
+      for (const { label, target } of resolved) {
+        for (const scenario of scenarios) {
+          if (cancelled) break;
+
+          const surface = surfaceById(scenario.surface);
+          if (surface === undefined) continue;
+
+          // `unauthenticated` overrides the target's key for this one call —
+          // the front-door check has to be able to arrive without a credential.
+          const client = new TokenShieldClient({
+            profile: target.profile,
+            keyAlias: scenario.unauthenticated === true ? null : target.keyAlias,
+            secret: scenario.unauthenticated === true ? null : target.secret,
+            scheme: scenario.unauthenticated === true ? 'none' : target.scheme,
+            timeoutMs: config.timeoutMs,
+          });
+
+          const exchange = await client.call(surface, scenario.body(ctx));
+          store.add(exchange);
+          const result = evaluateScenario(scenario, suite.id, exchange, label);
+          results.push(result);
+          emit('result', result);
+
+          if (paceMs > 0) await new Promise((r) => setTimeout(r, paceMs));
+        }
+      }
+
+      const report: ScenarioReport = {
+        suiteId: suite.id,
+        suiteTitle: suite.title,
+        startedAt,
+        durationMs: Date.now() - t0,
+        model: ctx.model,
+        embedModel: ctx.embedModel,
+        targets: resolved.map((r) => ({
+          label: r.label,
+          baseUrl: r.target.profile.baseUrl,
+          keyAlias: r.target.keyAlias,
+        })),
+        results,
+        tally: tally(results),
+      };
+      lastReport = report;
+
+      app.log.info(
+        `suite ${suite.id} on ${resolved.map((r) => r.label).join(' + ')} → ` +
+          Object.entries(report.tally)
+            .filter(([, n]) => n > 0)
+            .map(([k, n]) => `${k}:${n}`)
+            .join(' '),
+      );
+      emit('done', report);
+    } catch (error) {
+      emit('error', { error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  });
+
+  /**
+   * Write the last report to `out/`.
+   *
+   * The only disk write this tool performs that is not `.env.local`, and it
+   * happens because someone pressed a button — see AD-03. JSON for machines,
+   * Markdown for a ticket.
+   */
+  app.post('/api/scenarios/export', async (_request, reply) => {
+    if (lastReport === null) return reply.status(400).send({ error: 'Nothing to export yet.' });
+
+    const outDir = resolve(REPO_ROOT, 'out');
+    await mkdir(outDir, { recursive: true });
+    const stamp = lastReport.startedAt.replace(/[:.]/g, '-');
+    const base = `${lastReport.suiteId}-${stamp}`;
+    const jsonPath = resolve(outDir, `${base}.json`);
+    const mdPath = resolve(outDir, `${base}.md`);
+
+    await writeFile(jsonPath, JSON.stringify(lastReport, null, 2), 'utf8');
+    await writeFile(mdPath, reportToMarkdown(lastReport), 'utf8');
+
+    app.log.info(`exported ${base}.json and .md`);
+    return { jsonPath, mdPath };
   });
 
   // ── History ────────────────────────────────────────────────────────────────
