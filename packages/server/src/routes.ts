@@ -1032,11 +1032,27 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   // ── History ────────────────────────────────────────────────────────────────
 
+  /**
+   * History, newest first. Summaries only — the full exchange is fetched by id.
+   *
+   * Always bounded: an explicit `limit`, else a default page. The ring buffer
+   * caps the total anyway, but a list endpoint that returns "everything" by
+   * default is the shape that stops being fine the moment someone raises the
+   * cap (BP-007, BP-103).
+   */
+  const DEFAULT_RUN_PAGE = 50;
+  const MAX_RUN_PAGE = 200;
+
   app.get<{ Querystring: { limit?: string } }>('/api/runs', (request) => {
     const raw = request.query.limit;
     const parsed = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
-    const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-    return { total: store.size, capacity: store.capacity, exchanges: store.list(limit) };
+    const limit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_RUN_PAGE) : DEFAULT_RUN_PAGE;
+    return {
+      total: store.size,
+      capacity: store.capacity,
+      limit,
+      exchanges: store.list(limit),
+    };
   });
 
   app.get<{ Params: { id: string } }>('/api/runs/:id', (request, reply) => {

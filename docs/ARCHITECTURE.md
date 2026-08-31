@@ -305,7 +305,7 @@ hardening.
 | 5 | Governance lab + key minting via management key | **Done** | 11/11 | `36122d3` + follow-up |
 | 6 | Tools & MCP | **Done** | 8/8 | `ad5bddd` |
 | 7 | Scenario runner, Compare, report export | **Done** | 8/8 | `2a5a92d` |
-| 8 | Docs, ESLint, unit tests, BP checklist | Not started | — | — |
+| 8 | Docs, ESLint, unit tests, BP checklist | **Done** | 87 unit tests | pending |
 
 **Working agreement.** One phase at a time: build, stop, wait for "start next". Test cases are
 presented for approval **before** they run. Nothing is pushed without an explicit decision on where.
@@ -441,6 +441,29 @@ Stock `openai@4.104.0` and `@anthropic-ai/sdk@0.32.1`, unmodified.
 | Headers real customer traffic carries | Both SDKs add 8 `x-stainless-*` headers (arch, lang, os, package-version, retry-count, runtime, runtime-version, timeout); Anthropic also sends `anthropic-version`. Anything gateway-side that keys off headers sees these in production |
 
 ---
+
+## 6b. CloudGov best-practices checklist
+
+Run against Section 8 of `cloudgov-meta-repo/cloudgov-coding-best-practices.md`. Rules scoped to
+Java, reactive services, ClickHouse or the Chakra UI are marked N/A with the reason, not silently
+ticked.
+
+| Rule | Status | Evidence |
+|---|---|---|
+| BP-001 no null-pointer scenarios | **Pass** | `strict` + `noUncheckedIndexedAccess` + `verbatimModuleSyntax` across all three packages; `?.`/`??` throughout; every external shape read through a defensive reader (`extractModels`, `readOutput`, `readCreatedKey`, `valueAtPath`) that returns a default rather than throwing |
+| Appendix A — no `any` in TypeScript | **Pass** | `@typescript-eslint/no-explicit-any: error`; `npx eslint .` exits 0. The only casts are two at the vendor-SDK `Fetch` boundary, typed from each SDK's own constructor signature and commented (AD-19) |
+| BP-002 existing functionality not broken | N/A | New standalone repo; nothing depends on it |
+| BP-003 no new patterns without confirmation | **Pass** | Stack approved as plan decision D1/D3; 23 numbered decisions recorded with rationale and rejected alternatives |
+| BP-004 appropriate logging | **Pass** | One line per event on the backend; credentials masked before any log call. Fastify logs method and URL, never bodies — the mint route's body carries a live key |
+| BP-007 no response over 1 MB | **Pass** | `/api/runs` returns summaries and is always bounded (default 50, max 200); full exchanges are fetched one at a time by id; the ring buffer caps total retention at 200 |
+| BP-008 no thousands of objects in loops | **Pass** | The rate-limit burst is capped at 150 and abandons after 3 consecutive broken responses; the model probe at 12; suites run sequentially |
+| BP-009 unit tests for all new code | **Pass** | 87 tests over the pure modules: SSE parser 20, classifier 22, redaction 21, scenario evaluation 24. The I/O layer is covered by the 60+ live test cases recorded in the ledger |
+| BP-103 pagination on list APIs | **Pass** | `/api/runs` takes `limit`, defaults to 50, caps at 200, and returns the applied limit |
+| BP-500 no secrets committed | **Pass** | `.env*` gitignored except `.env.example` (placeholders only); every commit scanned for a full-length `cg-ak-`/`cg-mk-` before landing; masking unit-tested; the minted-key redaction verified end to end (P5-07) |
+| BP-600 all queries bounded | N/A | No database — AD-03 |
+| BP-100/105/107 reactive, `.collectList()`, JVM | N/A | No Java, no reactive runtime |
+| BP-101 RBAC, BP-102 `arrayJoin`, BP-104 org filter | N/A | No data layer; the tool is a black-box HTTP client |
+| **BP-200 UI follows the CloudGov theme** | **Deviation — declared** | Section 3 scopes this to `cloudgov-ui` and `cloudgov-dashboard`, and this repo is not in the best-practices document's scope list. It uses **Tailwind, not Chakra** — approved as plan decision D3 before any code was written. Rationale: a local, single-operator diagnostic console with no shared components to inherit; pulling in the Chakra design system would add weight and coupling for no user-facing benefit. **If this ever becomes a customer-facing surface, this decision has to be revisited.** |
 
 ## 7. Open items
 
