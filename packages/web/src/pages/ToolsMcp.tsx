@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { TOOL_PRESETS } from '@tokenshield/client';
 import type { AuthScheme, Exchange, ModelInfo, ToolTurn } from '@tokenshield/client';
@@ -7,38 +7,26 @@ import { api } from '../api';
 import type { McpBrowseResult, ToolLoopResult } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
 import { Card, Empty, Json, selectClass, StatusPill, VerdictPill } from '../components/ui';
+import type { ModelCatalogue } from '../hooks/useModelCatalogue';
 
 interface ToolsMcpProps {
   profileId: string;
   keyAlias: string | null;
   scheme: AuthScheme;
   onRecorded: () => void;
+  catalogue: ModelCatalogue;
 }
 
 export function ToolsMcp(props: ToolsMcpProps) {
   const target = { profileId: props.profileId, keyAlias: props.keyAlias, scheme: props.scheme };
 
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const models = props.catalogue.models;
   const [model, setModel] = useState('');
 
-  useEffect(() => {
-    if (props.keyAlias === null) return;
-    let cancelled = false;
-    api
-      .models(target)
-      .then((res) => {
-        if (cancelled) return;
-        setModels(res.models);
-        setModel((cur) => (res.models.some((m) => m.id === cur) ? cur : (res.models[0]?.id ?? '')));
-      })
-      .catch(() => {
-        /* the picker stays empty; the page still renders */
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.profileId, props.keyAlias, props.scheme]);
+  // Keep the choice legal as the shared catalogue arrives or the key changes.
+  if (models.length > 0 && !models.some((m) => m.id === model)) {
+    setModel(models[0]?.id ?? '');
+  }
 
   return (
     <div className="space-y-5">

@@ -55,12 +55,10 @@ export function Connect(props: ConnectProps) {
       <TargetPicker
         profiles={config.profiles}
         keys={config.keys}
-        profileId={props.profileId}
-        keyAlias={props.keyAlias}
-        scheme={props.scheme}
+        activeProfileId={props.profileId}
+        activeKeyAlias={props.keyAlias}
         onProfile={props.onProfile}
         onKey={props.onKey}
-        onScheme={props.onScheme}
         onTargetsChanged={props.onTargetsChanged}
         onRun={props.onRun}
         running={props.running}

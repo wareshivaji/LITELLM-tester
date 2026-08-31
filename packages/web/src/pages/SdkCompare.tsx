@@ -8,6 +8,8 @@ import { ExchangeDetail } from '../components/ExchangeDetail';
 import { RequestComposer } from '../components/RequestComposer';
 import { Card, Empty, Json, StatusPill, VerdictPill } from '../components/ui';
 import { useComposer } from '../hooks/useComposer';
+import type { ModelCatalogue } from '../hooks/useModelCatalogue';
+
 
 const MODE_LABEL: Record<SdkMode, string> = {
   raw: 'raw HTTP',
@@ -26,14 +28,16 @@ interface SdkCompareProps {
   keyAlias: string | null;
   scheme: AuthScheme;
   onRecorded: () => void;
+  catalogue: ModelCatalogue;
 }
 
 export function SdkCompare(props: SdkCompareProps) {
   const target = { profileId: props.profileId, keyAlias: props.keyAlias, scheme: props.scheme };
-  const composer = useComposer(target, {
+  const composer = useComposer({
     surfaces: SURFACES,
     initialSurfaceId: 'chat.completions',
-    onRecorded: props.onRecorded,
+    models: props.catalogue.models,
+    modelsError: props.catalogue.error,
   });
 
   const available = useMemo(() => sdkModesFor(composer.surface.id), [composer.surface.id]);
@@ -151,6 +155,7 @@ export function SdkCompare(props: SdkCompareProps) {
               {running ? 'Running…' : `Send via ${selected.length} client(s)`}
             </button>
           }
+          onSubmit={run}
           sendHint={
             <span className="text-xs text-amber-500/80">
               one call per client, run in sequence · real tokens

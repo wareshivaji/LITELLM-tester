@@ -4,7 +4,6 @@ import { SUITES } from '@tokenshield/client';
 import type {
   AuthScheme,
   Exchange,
-  ModelInfo,
   ScenarioOutcome,
   ScenarioReport,
   ScenarioResult,
@@ -14,6 +13,7 @@ import { api } from '../api';
 import type { LabConfigResponse } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
 import { Card, Empty, selectClass, StatusPill } from '../components/ui';
+import type { ModelCatalogue } from '../hooks/useModelCatalogue';
 import type { CheckStatusLike } from '../components/ui';
 
 const OUTCOME_TONE: Record<ScenarioOutcome, CheckStatusLike> = {
@@ -40,6 +40,7 @@ interface ScenariosProps {
   keyAlias: string | null;
   scheme: AuthScheme;
   onRecorded: () => void;
+  catalogue: ModelCatalogue;
 }
 
 export function Scenarios(props: ScenariosProps) {
@@ -47,9 +48,9 @@ export function Scenarios(props: ScenariosProps) {
   const suite = useMemo(() => SUITES.find((s) => s.id === suiteId) ?? SUITES[0], [suiteId]);
 
   const [secondProfile, setSecondProfile] = useState('');
-  const [model, setModel] = useState('bedrock-nova-micro');
-  const [embedModel, setEmbedModel] = useState('bedrock-titan-embed-v2');
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const models = props.catalogue.models;
+  const [model, setModel] = useState('');
+  const [embedModel, setEmbedModel] = useState('');
   const [includeSpending, setIncludeSpending] = useState(true);
   const [paceMs, setPaceMs] = useState(0);
 
@@ -61,23 +62,14 @@ export function Scenarios(props: ScenariosProps) {
   const [exported, setExported] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Defaults come from the shared catalogue, which distinguishes chat models
+  // from embedding models so each picker starts on something plausible.
   useEffect(() => {
-    if (props.keyAlias === null) return;
-    let cancelled = false;
-    api
-      .models({ profileId: props.profileId, keyAlias: props.keyAlias, scheme: props.scheme })
-      .then((res) => {
-        if (cancelled) return;
-        setModels(res.models);
-        setModel((cur) => (res.models.some((m) => m.id === cur) ? cur : (res.models[0]?.id ?? cur)));
-      })
-      .catch(() => {
-        /* the picker falls back to the typed defaults */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [props.profileId, props.keyAlias, props.scheme]);
+    setModel((cur) => (models.some((m) => m.id === cur) ? cur : props.catalogue.defaultModel));
+    setEmbedModel((cur) =>
+      models.some((m) => m.id === cur) ? cur : props.catalogue.defaultEmbedModel,
+    );
+  }, [models, props.catalogue.defaultModel, props.catalogue.defaultEmbedModel]);
 
   function run(): void {
     if (suite === undefined) return;
@@ -176,7 +168,7 @@ export function Scenarios(props: ScenariosProps) {
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Labelled label="Model">
             <select className={selectClass} value={model} onChange={(e) => setModel(e.target.value)}>
-              {models.length === 0 && <option value={model}>{model}</option>}
+              {models.length === 0 && <option value="">— no models for this key —</option>}
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.id}
@@ -190,7 +182,7 @@ export function Scenarios(props: ScenariosProps) {
               value={embedModel}
               onChange={(e) => setEmbedModel(e.target.value)}
             >
-              {models.length === 0 && <option value={embedModel}>{embedModel}</option>}
+              {models.length === 0 && <option value="">— no models for this key —</option>}
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.id}

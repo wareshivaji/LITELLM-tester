@@ -3,9 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SURFACES } from '@tokenshield/client';
 import type { ModelInfo, Probe, SurfaceSpec } from '@tokenshield/client';
 
-import { api } from '../api';
-import type { TargetRef } from '../api';
-
 export type ParsedBody = { ok: true; value: unknown } | { ok: false; error: string };
 
 /**
@@ -16,6 +13,10 @@ export type ParsedBody = { ok: true; value: unknown } | { ok: false; error: stri
  * regenerates it — but only until it has been hand-edited, after which the edit
  * wins. Silently overwriting someone's hand-built request is the fastest way to
  * make a tool untrustworthy.
+ *
+ * The model catalogue arrives as a prop rather than being fetched here: four
+ * pages use this hook, and each fetching its own meant four `GET /v1/models`
+ * calls on a page tour and a selection that reset whenever you navigated.
  */
 export interface Composer {
   surface: SurfaceSpec;
@@ -43,17 +44,18 @@ export interface UseComposerOptions {
   surfaces: readonly SurfaceSpec[];
   initialSurfaceId: string;
   initialPrompt?: string;
+  /** The key's catalogue, owned by the app shell. */
+  models: ModelInfo[];
+  modelsError?: string | null;
   /**
    * Applied to the generated sample body — used by the Streaming page to fold
    * in `stream: true`. Memoise it, or the regeneration effect will loop.
    */
   transform?: (surface: SurfaceSpec, body: unknown) => unknown;
-  /** Notified whenever a call was recorded, so the shared log can refresh. */
-  onRecorded?: () => void;
 }
 
-export function useComposer(target: TargetRef, options: UseComposerOptions): Composer {
-  const { surfaces, initialSurfaceId, transform, onRecorded } = options;
+export function useComposer(options: UseComposerOptions): Composer {
+  const { surfaces, initialSurfaceId, transform, models } = options;
 
   const [surfaceId, setSurfaceId] = useState(initialSurfaceId);
   const surface = useMemo(
@@ -61,46 +63,19 @@ export function useComposer(target: TargetRef, options: UseComposerOptions): Com
     [surfaces, surfaceId],
   );
 
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [modelsError, setModelsError] = useState<string | null>(null);
   const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState(options.initialPrompt ?? 'Reply with exactly: pong');
   const [bodyText, setBodyText] = useState('');
   const [dirty, setDirty] = useState(false);
   const [lastProbe, setLastProbe] = useState<Probe | null>(null);
 
-  // The key's own catalogue. Free — one GET /v1/models.
+  // Keep the selection legal as the catalogue arrives or the key changes,
+  // without discarding a still-valid choice.
   useEffect(() => {
-    if (target.keyAlias === null) {
-      setModels([]);
-      setModelsError('Select a key on the Connect page to load its model catalogue.');
-      return;
-    }
-    let cancelled = false;
-    setModelsError(null);
-    api
-      .models(target)
-      .then((res) => {
-        if (cancelled) return;
-        setModels(res.models);
-        if (res.models.length === 0) {
-          setModelsError(`No models available — ${res.verdict.kind}: ${res.verdict.detail}`);
-        }
-        setModel((current) =>
-          res.models.some((m) => m.id === current) ? current : (res.models[0]?.id ?? ''),
-        );
-        onRecorded?.();
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setModels([]);
-        setModelsError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target.profileId, target.keyAlias, target.scheme]);
+    setModel((current) =>
+      current.length > 0 && models.some((m) => m.id === current) ? current : (models[0]?.id ?? ''),
+    );
+  }, [models]);
 
   const build = useCallback((): string => {
     const sample = surface.sample(model, prompt);
@@ -144,7 +119,7 @@ export function useComposer(target: TargetRef, options: UseComposerOptions): Com
       setLastProbe(null);
     },
     models,
-    modelsError,
+    modelsError: options.modelsError ?? null,
     model,
     setModel,
     prompt,

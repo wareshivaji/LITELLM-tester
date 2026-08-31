@@ -1,86 +1,44 @@
 import { useState } from 'react';
 
-import type { AuthScheme, KeyKind, LabKeyRef, LabProfile } from '@tokenshield/client';
+import type { KeyKind, LabKeyRef, LabProfile } from '@tokenshield/client';
 
 import { api } from '../api';
-import { Card, Field, selectClass } from './ui';
+import { Card, selectClass } from './ui';
 
 const inputClass =
   'w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-600 focus:ring-1 focus:ring-sky-600/40';
 
-function AddButton({ open, onClick }: { open: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="text-[11px] text-sky-400 hover:text-sky-300"
-    >
-      {open ? 'cancel' : '+ add'}
-    </button>
-  );
-}
-
-/** Splits the dropdown so a target that vanishes on restart is never a surprise. */
-function SourceOptions<T extends { source: 'file' | 'session' }>({
-  items,
-  render,
+/**
+ * Target *management* — adding and removing gateways and keys.
+ *
+ * Deliberately not a selector. Selection moved to the bar at the top of every
+ * page, and leaving a second copy of the same three controls here meant one
+ * screen with two ways to change the same thing and no hint which one mattered.
+ * This is the inventory; the bar is the switch.
+ */
+export function TargetPicker({
+  profiles,
+  keys,
+  activeProfileId,
+  activeKeyAlias,
+  onTargetsChanged,
+  onProfile,
+  onKey,
+  onRun,
+  running,
+  runError,
 }: {
-  items: T[];
-  render: (item: T) => { value: string; label: string };
-}) {
-  const file = items.filter((i) => i.source === 'file');
-  const session = items.filter((i) => i.source === 'session');
-  return (
-    <>
-      {file.length > 0 && (
-        <optgroup label="From .env.local">
-          {file.map((item) => {
-            const { value, label } = render(item);
-            return (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            );
-          })}
-        </optgroup>
-      )}
-      {session.length > 0 && (
-        <optgroup label="This session — gone on restart">
-          {session.map((item) => {
-            const { value, label } = render(item);
-            return (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            );
-          })}
-        </optgroup>
-      )}
-    </>
-  );
-}
-
-interface TargetPickerProps {
   profiles: LabProfile[];
   keys: LabKeyRef[];
-  profileId: string;
-  keyAlias: string | null;
-  scheme: AuthScheme;
-  onProfile: (id: string) => void;
-  onKey: (alias: string | null) => void;
-  onScheme: (scheme: AuthScheme) => void;
-  /** Refetch config after the registry changed. */
+  activeProfileId: string;
+  activeKeyAlias: string | null;
   onTargetsChanged: () => void;
+  onProfile: (id: string) => void;
+  onKey: (alias: string) => void;
   onRun: () => void;
   running: boolean;
   runError: string | null;
-}
-
-export function TargetPicker(props: TargetPickerProps) {
-  const apiKeys = props.keys.filter((k) => k.kind === 'api');
-  const selectedProfile = props.profiles.find((p) => p.id === props.profileId);
-  const selectedKey = apiKeys.find((k) => k.alias === props.keyAlias);
-
+}) {
   const [addingProfile, setAddingProfile] = useState(false);
   const [profileLabel, setProfileLabel] = useState('');
   const [profileUrl, setProfileUrl] = useState('');
@@ -103,8 +61,8 @@ export function TargetPicker(props: TargetPickerProps) {
       setProfileLabel('');
       setProfileUrl('');
       setAddingProfile(false);
-      props.onTargetsChanged();
-      props.onProfile(created.id);
+      onTargetsChanged();
+      onProfile(created.id);
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -123,8 +81,8 @@ export function TargetPicker(props: TargetPickerProps) {
       setKeySecret('');
       setKeyAliasInput('');
       setAddingKey(false);
-      props.onTargetsChanged();
-      if (created.kind === 'api') props.onKey(created.alias);
+      onTargetsChanged();
+      if (created.kind === 'api') onKey(created.alias);
       if (created.warning !== undefined) setKeyNotice(created.warning);
     } catch (err) {
       setKeyError(err instanceof Error ? err.message : String(err));
@@ -133,48 +91,57 @@ export function TargetPicker(props: TargetPickerProps) {
     }
   }
 
-  async function removeProfile(id: string): Promise<void> {
-    setProfileError(null);
+  async function remove(kind: 'profile' | 'key', id: string): Promise<void> {
+    const setErr = kind === 'profile' ? setProfileError : setKeyError;
+    setErr(null);
     try {
-      await api.removeProfile(id);
-      props.onTargetsChanged();
+      if (kind === 'profile') await api.removeProfile(id);
+      else await api.removeKey(id);
+      onTargetsChanged();
     } catch (err) {
-      setProfileError(err instanceof Error ? err.message : String(err));
+      setErr(err instanceof Error ? err.message : String(err));
     }
   }
 
-  async function removeKey(alias: string): Promise<void> {
-    setKeyError(null);
-    try {
-      await api.removeKey(alias);
-      props.onTargetsChanged();
-    } catch (err) {
-      setKeyError(err instanceof Error ? err.message : String(err));
-    }
-  }
+  const apiKeys = keys.filter((k) => k.kind === 'api');
+  const otherKeys = keys.filter((k) => k.kind !== 'api');
 
   return (
     <Card
-      title="Target"
-      subtitle="Which gateway, which credential, presented how. Stamped on every exchange."
+      title="Targets"
+      subtitle="Everything this lab can point at. Switch between them in the bar above; add and remove them here."
+      right={
+        <button
+          type="button"
+          onClick={onRun}
+          disabled={running}
+          className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+        >
+          {running ? 'Running preflight…' : 'Run preflight'}
+        </button>
+      }
     >
-      <div className="grid gap-4 md:grid-cols-3">
-        {/* ── Gateway ── */}
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-              Gateway
-            </span>
-            <AddButton
-              open={addingProfile}
+      <div className="grid gap-5 md:grid-cols-2">
+        {/* ── Gateways ── */}
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+              Gateways
+            </h3>
+            <button
+              type="button"
               onClick={() => {
                 setAddingProfile(!addingProfile);
                 setProfileError(null);
               }}
-            />
+              className="text-[11px] text-sky-400 hover:text-sky-300"
+            >
+              {addingProfile ? 'cancel' : '+ add gateway'}
+            </button>
           </div>
-          {addingProfile ? (
-            <div className="space-y-2">
+
+          {addingProfile && (
+            <div className="mb-2 space-y-2 rounded-md border border-sky-900/50 bg-sky-950/10 p-2">
               <input
                 className={inputClass}
                 placeholder="Label — e.g. Staging"
@@ -199,52 +166,69 @@ export function TargetPicker(props: TargetPickerProps) {
                 Add gateway
               </button>
             </div>
-          ) : (
-            <>
-              <select
-                className={selectClass}
-                value={props.profileId}
-                onChange={(e) => props.onProfile(e.target.value)}
-              >
-                <SourceOptions
-                  items={props.profiles}
-                  render={(p) => ({ value: p.id, label: p.label })}
-                />
-              </select>
-              <div className="mono mt-1 flex items-center gap-2 text-xs text-zinc-600">
-                <span className="truncate">{selectedProfile?.baseUrl ?? '—'}</span>
-                {selectedProfile?.source === 'session' && (
-                  <button
-                    type="button"
-                    onClick={() => void removeProfile(selectedProfile.id)}
-                    className="shrink-0 text-rose-400/70 hover:text-rose-300"
-                  >
-                    remove
-                  </button>
-                )}
-              </div>
-            </>
           )}
-          {profileError !== null && <p className="mt-1.5 text-xs text-rose-400">{profileError}</p>}
-        </div>
 
-        {/* ── API key ── */}
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-              API key
-            </span>
-            <AddButton
-              open={addingKey}
+          <ul className="space-y-1">
+            {profiles.map((p) => (
+              <li
+                key={p.id}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                  p.id === activeProfileId
+                    ? 'border-sky-800/70 bg-sky-950/20'
+                    : 'border-zinc-800 bg-zinc-950/40'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onProfile(p.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="text-zinc-200">{p.label}</span>
+                  <span className="mono ml-2 truncate text-[10px] text-zinc-600">{p.baseUrl}</span>
+                </button>
+                {p.source === 'session' ? (
+                  <>
+                    <span className="rounded bg-amber-500/10 px-1 text-[10px] text-amber-300">
+                      session
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void remove('profile', p.id)}
+                      className="text-[10px] text-rose-400/70 hover:text-rose-300"
+                    >
+                      remove
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[10px] text-zinc-700">.env.local</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {profileError !== null && <p className="mt-1.5 text-xs text-rose-400">{profileError}</p>}
+        </section>
+
+        {/* ── Keys ── */}
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+              Credentials
+            </h3>
+            <button
+              type="button"
               onClick={() => {
                 setAddingKey(!addingKey);
                 setKeyError(null);
                 setKeySecret('');
               }}
-            />
+              className="text-[11px] text-sky-400 hover:text-sky-300"
+            >
+              {addingKey ? 'cancel' : '+ add key'}
+            </button>
           </div>
-          {addingKey ? (
-            <div className="space-y-2">
+
+          {addingKey && (
+            <div className="mb-2 space-y-2 rounded-md border border-sky-900/50 bg-sky-950/10 p-2">
               <input
                 className={inputClass}
                 placeholder="Alias — e.g. STAGING_BEDROCK"
@@ -281,79 +265,66 @@ export function TargetPicker(props: TargetPickerProps) {
                 Add key
               </button>
               <p className="text-[11px] leading-relaxed text-zinc-600">
-                Held in the backend’s memory only — never written to .env.local, never sent back to
-                this page, gone when the server restarts.
+                Held in the backend&rsquo;s memory only — never written to .env.local, never sent
+                back to this page, gone when the server restarts.
               </p>
             </div>
-          ) : (
-            <>
-              <select
-                className={selectClass}
-                value={props.keyAlias ?? ''}
-                onChange={(e) => props.onKey(e.target.value === '' ? null : e.target.value)}
-              >
-                <option value="">— none (unauthenticated) —</option>
-                <SourceOptions
-                  items={apiKeys}
-                  render={(k) => ({ value: k.alias, label: k.alias })}
-                />
-              </select>
-              <div className="mono mt-1 flex items-center gap-2 text-xs text-zinc-600">
-                <span className="truncate">
-                  {selectedKey?.masked ?? (apiKeys.length === 0 ? 'no keys configured' : 'unauthenticated')}
-                </span>
-                {selectedKey?.source === 'session' && (
-                  <button
-                    type="button"
-                    onClick={() => void removeKey(selectedKey.alias)}
-                    className="shrink-0 text-rose-400/70 hover:text-rose-300"
-                  >
-                    remove
-                  </button>
-                )}
-              </div>
-            </>
           )}
-          {keyError !== null && <p className="mt-1.5 text-xs text-rose-400">{keyError}</p>}
-          {keyNotice !== null && <p className="mt-1.5 text-xs text-amber-400">{keyNotice}</p>}
-        </div>
 
-        {/* ── Auth header ── */}
-        <Field label="Auth header" hint="TokenShield accepts both; clients in the wild use both.">
-          <div className="flex gap-2">
-            {(['bearer', 'x-api-key'] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => props.onScheme(s)}
-                className={`mono flex-1 rounded-md border px-3 py-2 text-xs ${
-                  props.scheme === s
-                    ? 'border-sky-600 bg-sky-950/40 text-sky-200'
-                    : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
+          <ul className="space-y-1">
+            {[...apiKeys, ...otherKeys].map((k) => (
+              <li
+                key={k.alias}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                  k.alias === activeKeyAlias
+                    ? 'border-sky-800/70 bg-sky-950/20'
+                    : 'border-zinc-800 bg-zinc-950/40'
                 }`}
               >
-                {s === 'bearer' ? 'Authorization: Bearer' : 'x-api-key'}
-              </button>
+                <button
+                  type="button"
+                  disabled={k.kind !== 'api'}
+                  onClick={() => onKey(k.alias)}
+                  className="min-w-0 flex-1 text-left disabled:cursor-default"
+                >
+                  <span className="text-zinc-200">{k.alias}</span>
+                  <span className="mono ml-2 text-[10px] text-zinc-600">{k.masked}</span>
+                </button>
+                {k.kind !== 'api' && (
+                  <span className="rounded bg-violet-500/10 px-1 text-[10px] text-violet-300">
+                    {k.kind}
+                  </span>
+                )}
+                {k.source === 'session' ? (
+                  <>
+                    <span className="rounded bg-amber-500/10 px-1 text-[10px] text-amber-300">
+                      session
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void remove('key', k.alias)}
+                      className="text-[10px] text-rose-400/70 hover:text-rose-300"
+                    >
+                      remove
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[10px] text-zinc-700">.env.local</span>
+                )}
+              </li>
             ))}
-          </div>
-        </Field>
+          </ul>
+          {keyError !== null && <p className="mt-1.5 text-xs text-rose-400">{keyError}</p>}
+          {keyNotice !== null && <p className="mt-1.5 text-xs text-amber-400">{keyNotice}</p>}
+        </section>
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={props.onRun}
-          disabled={props.running}
-          className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {props.running ? 'Running preflight…' : 'Run preflight'}
-        </button>
-        <span className="text-xs text-zinc-600">5 checks · no provider call · costs nothing</span>
-      </div>
-
-      {props.runError !== null && (
+      <p className="mt-4 text-xs text-zinc-600">
+        Preflight runs five checks against the selected target. No provider call, costs nothing.
+      </p>
+      {runError !== null && (
         <p className="mt-3 rounded-md border border-rose-900/60 bg-rose-950/30 px-3 py-2 text-sm text-rose-300">
-          {props.runError}
+          {runError}
         </p>
       )}
     </Card>

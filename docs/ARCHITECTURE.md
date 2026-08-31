@@ -240,6 +240,25 @@ registers it in the in-memory registry, and runs the Exchange through `redactMin
 it reaches the store. The browser receives an alias and a mask, never the value. The scrub runs on
 the failure path too, where a partial body might still carry something.
 
+### AD-24 · The target is switchable from every page, not just a settings page
+**Why.** Every page's behaviour depends on which gateway and key are selected, and the selection
+originally lived only on Connect — so trying a request against a second gateway meant navigating
+away, changing it, and navigating back. Doing that dozens of times while testing made it obvious.
+The bar is now interactive on every page, and Connect keeps the *inventory* — add, remove, see the
+source of each target — rather than a second copy of the same three controls. One screen with two
+ways to change the same thing, and no hint which one matters, is worse than either alone.
+
+### AD-25 · One model catalogue for the whole app
+**Why.** Four pages each fetched `GET /v1/models` on mount, which meant a page tour issued four
+requests (eight under React's development double-invoke) and every page kept its own model
+selection that silently reset on navigation. `useModelCatalogue` in the shell fetches once per
+target change and hands the result down, so a choice survives moving between pages.
+
+### AD-26 · The exchange log is a drawer
+**Why.** It used to sit at the bottom of every page, always open, pushing the actual work down the
+screen. It is reference material you consult after a call, not content you read — so it collapses,
+with a count badge in the bar, and opens when you want it.
+
 ### AD-22 · A landmine scenario inverts the meaning of a pass
 **Why.** A scenario marked `landmine` describes behaviour believed *wrong today*, so its
 expectation matching means the bug is still there — reported `landmine-present`, never as a

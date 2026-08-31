@@ -1,38 +1,67 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { AuthScheme, ExchangeSummary } from '@tokenshield/client';
 
 import { api } from './api';
 import type { LabConfigResponse, PreflightResponse } from './api';
 import { ExchangeLog } from './components/ExchangeLog';
+import { TargetBar } from './components/TargetBar';
+import { Notice } from './components/ui';
+import { useModelCatalogue } from './hooks/useModelCatalogue';
 import { Connect } from './pages/Connect';
-import { Playground } from './pages/Playground';
 import { Governance } from './pages/Governance';
+import { Playground } from './pages/Playground';
 import { Scenarios } from './pages/Scenarios';
 import { SdkCompare } from './pages/SdkCompare';
 import { Streaming } from './pages/Streaming';
 import { ToolsMcp } from './pages/ToolsMcp';
 
 /**
- * The seven pages of the lab. Everything past the current phase is shown, not
- * hidden, so the shape of the tool is visible from day one.
+ * The seven pages, grouped by what you are trying to do rather than listed
+ * flat. A first-time reader should be able to tell where to start, and what the
+ * tool is for, from the sidebar alone.
+ *
+ * The amber dot marks a page that can reach a provider, so cost is visible
+ * before clicking rather than discovered afterwards.
  */
-const NAV: ReadonlyArray<{ id: string; label: string; phase: number }> = [
-  { id: 'connect', label: 'Connect', phase: 1 },
-  { id: 'playground', label: 'Playground', phase: 2 },
-  { id: 'streaming', label: 'Streaming', phase: 3 },
-  { id: 'sdk-compare', label: 'SDK compare', phase: 4 },
-  { id: 'governance', label: 'Governance', phase: 5 },
-  { id: 'tools', label: 'Tools & MCP', phase: 6 },
-  { id: 'scenarios', label: 'Scenarios', phase: 7 },
+const NAV: ReadonlyArray<{
+  section: string;
+  items: Array<{ id: string; label: string; blurb: string; spends: boolean }>;
+}> = [
+  {
+    section: 'Set up',
+    items: [
+      { id: 'connect', label: 'Connect', blurb: 'Can I reach this gateway?', spends: false },
+    ],
+  },
+  {
+    section: 'Send',
+    items: [
+      { id: 'playground', label: 'Playground', blurb: 'One request, eight surfaces', spends: true },
+      { id: 'streaming', label: 'Streaming', blurb: 'A response over time', spends: true },
+      { id: 'sdk-compare', label: 'SDK compare', blurb: 'What a real SDK reports', spends: true },
+    ],
+  },
+  {
+    section: 'Govern',
+    items: [
+      { id: 'governance', label: 'Governance', blurb: 'Mint keys, trip the gates', spends: true },
+      { id: 'tools', label: 'Tools & MCP', blurb: 'Tool loops, MCP entitlement', spends: true },
+    ],
+  },
+  {
+    section: 'Verify',
+    items: [
+      { id: 'scenarios', label: 'Scenarios', blurb: 'Suites, compare, reports', spends: true },
+    ],
+  },
 ];
-
-const CURRENT_PHASE = 7;
 
 export function App() {
   const [config, setConfig] = useState<LabConfigResponse | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [page, setPage] = useState('connect');
+  const [logOpen, setLogOpen] = useState(false);
 
   const [profileId, setProfileId] = useState('');
   const [keyAlias, setKeyAlias] = useState<string | null>(null);
@@ -46,6 +75,9 @@ export function App() {
   const [runsTotal, setRunsTotal] = useState(0);
   const [runsCapacity, setRunsCapacity] = useState(0);
 
+  const target = useMemo(() => ({ profileId, keyAlias, scheme }), [profileId, keyAlias, scheme]);
+  const catalogue = useModelCatalogue(target);
+
   useEffect(() => {
     api
       .config()
@@ -58,7 +90,7 @@ export function App() {
       .catch((err: unknown) => {
         setBootError(
           err instanceof Error
-            ? `${err.message} — is the lab server running? (npm run dev)`
+            ? `${err.message} — is the lab server running?`
             : String(err),
         );
       });
@@ -67,7 +99,7 @@ export function App() {
   /**
    * Refetch after a session target was added or removed. Selection is
    * re-validated here rather than in the picker: removing the selected key
-   * would otherwise leave the target strip naming something that no longer
+   * would otherwise leave the target bar naming something that no longer
    * exists, and the next call would 400 on an alias the UI still shows.
    */
   const refreshConfig = useCallback(() => {
@@ -124,6 +156,7 @@ export function App() {
         <div className="max-w-lg rounded-lg border border-rose-900/60 bg-rose-950/20 p-6">
           <h1 className="text-sm font-semibold text-rose-200">Lab server unreachable</h1>
           <p className="mt-2 text-sm text-rose-300/80">{bootError}</p>
+          <pre className="mono mt-3 rounded bg-zinc-950 p-2 text-xs text-zinc-400">npm run dev</pre>
         </div>
       </div>
     );
@@ -133,123 +166,107 @@ export function App() {
     return <div className="p-8 text-sm text-zinc-500">Loading lab configuration…</div>;
   }
 
-  const profile = config.profiles.find((p) => p.id === profileId);
-  const key = config.keys.find((k) => k.alias === keyAlias);
-  const sessionTarget = profile?.source === 'session' || key?.source === 'session';
+  const hasApiKey = config.keys.some((k) => k.kind === 'api');
+  const pageProps = { profileId, keyAlias, scheme, onRecorded: refreshRuns };
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950">
+      <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950">
         <div className="border-b border-zinc-800 px-4 py-4">
           <div className="text-sm font-semibold text-zinc-100">TokenShield Lab</div>
-          <div className="mt-0.5 text-[11px] text-zinc-600">client SDK · console</div>
+          <div className="mt-0.5 text-[11px] text-zinc-600">be the customer, see everything</div>
         </div>
-        <nav className="flex-1 space-y-0.5 p-2">
-          {NAV.map((item) => {
-            const enabled = item.phase <= CURRENT_PHASE;
-            const active = enabled && item.id === page;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                disabled={!enabled}
-                onClick={() => setPage(item.id)}
-                className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${
-                  active
-                    ? 'bg-zinc-800 text-zinc-100'
-                    : enabled
-                      ? 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
-                      : 'cursor-not-allowed text-zinc-600'
-                }`}
-              >
-                <span>{item.label}</span>
-                {!enabled && (
-                  <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-600">
-                    P{item.phase}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+
+        <nav className="flex-1 overflow-auto p-2">
+          {NAV.map((group) => (
+            <div key={group.section} className="mb-3">
+              <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+                {group.section}
+              </div>
+              {group.items.map((item) => {
+                const active = item.id === page;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setPage(item.id)}
+                    className={`flex w-full flex-col rounded-md px-3 py-1.5 text-left ${
+                      active ? 'bg-zinc-800' : 'hover:bg-zinc-900'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className={`text-sm ${active ? 'text-zinc-100' : 'text-zinc-400'}`}>
+                        {item.label}
+                      </span>
+                      {item.spends && (
+                        <span
+                          className="h-1.5 w-1.5 rounded-full bg-amber-500/70"
+                          title="This page can reach a provider — real tokens"
+                        />
+                      )}
+                    </span>
+                    <span className="text-[10px] leading-tight text-zinc-600">{item.blurb}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
+
         <div className="border-t border-zinc-800 p-3 text-[10px] leading-relaxed text-zinc-600">
-          No database. History lives in the server’s memory and is discarded on restart.
+          <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-500/70 align-middle" />
+          can spend · no database, history is in memory
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/*
-          The target strip. Always visible, on every page, because the most
-          expensive recurring bug in this workspace has been "which gateway
-          did that run actually hit?".
-        */}
-        <header className="flex items-center gap-4 border-b border-zinc-800 bg-zinc-950/80 px-6 py-2.5 text-xs">
-          <span className="text-zinc-600">target</span>
-          <span className="rounded bg-zinc-900 px-2 py-0.5 text-zinc-200">
-            {profile?.label ?? profileId}
-          </span>
-          <span className="mono text-zinc-400">{profile?.baseUrl ?? '—'}</span>
-          <span className="text-zinc-700">|</span>
-          <span className="text-zinc-600">key</span>
-          <span className="mono text-zinc-300">{keyAlias ?? 'none'}</span>
-          {key !== undefined && <span className="mono text-zinc-600">{key.masked}</span>}
-          {sessionTarget && (
-            <span
-              className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300"
-              title="This target was entered in the console and is held in memory only — it disappears when the lab server restarts."
-            >
-              session
-            </span>
-          )}
-          <span className="mono ml-auto text-zinc-600">{scheme}</span>
-        </header>
+        <TargetBar
+          profiles={config.profiles}
+          keys={config.keys}
+          profileId={profileId}
+          keyAlias={keyAlias}
+          scheme={scheme}
+          onProfile={setProfileId}
+          onKey={setKeyAlias}
+          onScheme={setScheme}
+          logCount={runsTotal}
+          logOpen={logOpen}
+          onToggleLog={() => setLogOpen((o) => !o)}
+        />
 
         <main className="min-h-0 flex-1 space-y-5 overflow-auto p-6">
+          {!hasApiKey && (
+            <Notice tone="warn" title="No API key configured">
+              <p>
+                Nothing here can talk to a gateway yet. Add a key on <strong>Connect</strong> with{' '}
+                <span className="mono">+ add</span>, or put{' '}
+                <span className="mono">TSLAB_KEY_&lt;ALIAS&gt;=cg-ak-…</span> in{' '}
+                <span className="mono">.env.local</span> and restart the backend.
+              </p>
+            </Notice>
+          )}
+          {hasApiKey && keyAlias === null && (
+            <Notice tone="info" title="No key selected">
+              <p>Pick one in the bar above — the gateway will refuse everything until you do.</p>
+            </Notice>
+          )}
+
           {page === 'playground' ? (
-            <Playground
-              profileId={profileId}
-              keyAlias={keyAlias}
-              scheme={scheme}
-              onRecorded={refreshRuns}
-            />
+            <Playground {...pageProps} catalogue={catalogue} />
+          ) : page === 'streaming' ? (
+            <Streaming {...pageProps} catalogue={catalogue} />
+          ) : page === 'sdk-compare' ? (
+            <SdkCompare {...pageProps} catalogue={catalogue} />
           ) : page === 'scenarios' ? (
-            <Scenarios
-              config={config}
-              profileId={profileId}
-              keyAlias={keyAlias}
-              scheme={scheme}
-              onRecorded={refreshRuns}
-            />
+            <Scenarios {...pageProps} config={config} catalogue={catalogue} />
           ) : page === 'tools' ? (
-            <ToolsMcp
-              profileId={profileId}
-              keyAlias={keyAlias}
-              scheme={scheme}
-              onRecorded={refreshRuns}
-            />
+            <ToolsMcp {...pageProps} catalogue={catalogue} />
           ) : page === 'governance' ? (
             <Governance
-              profileId={profileId}
-              keyAlias={keyAlias}
-              scheme={scheme}
+              {...pageProps}
               keys={config.keys}
               onTargetsChanged={refreshConfig}
               onKey={setKeyAlias}
-              onRecorded={refreshRuns}
-            />
-          ) : page === 'sdk-compare' ? (
-            <SdkCompare
-              profileId={profileId}
-              keyAlias={keyAlias}
-              scheme={scheme}
-              onRecorded={refreshRuns}
-            />
-          ) : page === 'streaming' ? (
-            <Streaming
-              profileId={profileId}
-              keyAlias={keyAlias}
-              scheme={scheme}
-              onRecorded={refreshRuns}
             />
           ) : (
             <Connect
@@ -267,14 +284,23 @@ export function App() {
               error={error}
             />
           )}
-
-          <ExchangeLog
-            runs={runs}
-            total={runsTotal}
-            capacity={runsCapacity}
-            onRefresh={refreshRuns}
-          />
         </main>
+
+        {/*
+          The log is a drawer, not a page section. It used to sit at the bottom
+          of every page, always open, pushing the actual work down the screen —
+          and it is reference material you consult, not content you read.
+        */}
+        {logOpen && (
+          <div className="max-h-[45vh] shrink-0 overflow-auto border-t border-zinc-800 bg-zinc-950/60 p-4">
+            <ExchangeLog
+              runs={runs}
+              total={runsTotal}
+              capacity={runsCapacity}
+              onRefresh={refreshRuns}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

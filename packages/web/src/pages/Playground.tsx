@@ -8,20 +8,24 @@ import { ExchangeDetail } from '../components/ExchangeDetail';
 import { RequestComposer } from '../components/RequestComposer';
 import { Card, Empty, Json, VerdictPill } from '../components/ui';
 import { useComposer } from '../hooks/useComposer';
+import type { ModelCatalogue } from '../hooks/useModelCatalogue';
+
 
 interface PlaygroundProps {
   profileId: string;
   keyAlias: string | null;
   scheme: AuthScheme;
   onRecorded: () => void;
+  catalogue: ModelCatalogue;
 }
 
 export function Playground(props: PlaygroundProps) {
   const target = { profileId: props.profileId, keyAlias: props.keyAlias, scheme: props.scheme };
-  const composer = useComposer(target, {
+  const composer = useComposer({
     surfaces: SURFACES,
     initialSurfaceId: 'chat.completions',
-    onRecorded: props.onRecorded,
+    models: props.catalogue.models,
+    modelsError: props.catalogue.error,
   });
 
   const [sending, setSending] = useState(false);
@@ -61,6 +65,7 @@ export function Playground(props: PlaygroundProps) {
             {sending ? 'Sending…' : `Send to ${composer.surface.label}`}
           </button>
         }
+        onSubmit={send}
         sendHint={
           <span className="text-xs text-amber-500/80">
             reaches a provider · real tokens, real spend

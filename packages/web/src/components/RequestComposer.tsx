@@ -43,6 +43,7 @@ export function RequestComposer({
   extraControls,
   actions,
   sendHint,
+  onSubmit,
 }: {
   composer: Composer;
   surfaces: readonly SurfaceSpec[];
@@ -52,6 +53,8 @@ export function RequestComposer({
   /** The send / stop row. */
   actions: ReactNode;
   sendHint?: ReactNode;
+  /** Ctrl/Cmd+Enter in the body editor. Sending is the only thing you do here. */
+  onSubmit?: () => void;
 }) {
   const probes = showProbes ? probesFor(composer.surface.id) : [];
 
@@ -80,7 +83,9 @@ export function RequestComposer({
               onChange={(e) => composer.setModel(e.target.value)}
               disabled={composer.models.length === 0}
             >
-              {composer.models.length === 0 && <option value="">— none loaded —</option>}
+              {composer.models.length === 0 && (
+                <option value="">— no models for this key —</option>
+              )}
               {composer.models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.id}
@@ -161,7 +166,19 @@ export function RequestComposer({
           spellCheck={false}
           value={composer.bodyText}
           onChange={(e) => composer.setBodyText(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+              e.preventDefault();
+              onSubmit?.();
+            }
+          }}
         />
+        {onSubmit !== undefined && (
+          <p className="mt-1 text-right text-[10px] text-zinc-700">
+            <span className="mono">Ctrl</span>/<span className="mono">⌘</span> +{' '}
+            <span className="mono">Enter</span> to send
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap items-center gap-3">
           {actions}
           {composer.parsed.ok ? (

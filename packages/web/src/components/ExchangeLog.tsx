@@ -4,7 +4,7 @@ import type { Exchange, ExchangeSummary } from '@tokenshield/client';
 
 import { api } from '../api';
 import { ExchangeDetail } from './ExchangeDetail';
-import { Card, Empty, VerdictPill } from './ui';
+import { Card, Empty, VerdictLegend, VerdictPill } from './ui';
 
 export function ExchangeLog({
   runs,
@@ -51,8 +51,11 @@ export function ExchangeLog({
         </button>
       }
     >
+      <div className="mb-3">
+        <VerdictLegend />
+      </div>
       {runs.length === 0 ? (
-        <Empty>No calls yet.</Empty>
+        <Empty>No calls yet. Anything this lab sends lands here.</Empty>
       ) : (
         <div className="overflow-hidden rounded-md border border-zinc-800">
           <table className="w-full text-left text-xs">

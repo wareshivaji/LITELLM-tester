@@ -14,12 +14,15 @@ import { ExchangeDetail } from '../components/ExchangeDetail';
 import { RequestComposer } from '../components/RequestComposer';
 import { Card, Empty, StatusPill, VerdictPill } from '../components/ui';
 import { useComposer } from '../hooks/useComposer';
+import type { ModelCatalogue } from '../hooks/useModelCatalogue';
+
 
 interface StreamingProps {
   profileId: string;
   keyAlias: string | null;
   scheme: AuthScheme;
   onRecorded: () => void;
+  catalogue: ModelCatalogue;
 }
 
 export function Streaming(props: StreamingProps) {
@@ -31,12 +34,13 @@ export function Streaming(props: StreamingProps) {
     [includeUsage],
   );
 
-  const composer = useComposer(target, {
+  const composer = useComposer({
     surfaces: STREAMING_SURFACES,
     initialSurfaceId: 'chat.completions',
     initialPrompt: 'Count from 1 to 20, one number per line.',
     transform,
-    onRecorded: props.onRecorded,
+    models: props.catalogue.models,
+    modelsError: props.catalogue.error,
   });
 
   const [live, setLive] = useState<StreamChunk[]>([]);
@@ -134,6 +138,7 @@ export function Streaming(props: StreamingProps) {
             )}
           </>
         }
+        onSubmit={start}
         sendHint={
           <span className="text-xs text-amber-500/80">
             reaches a provider · real tokens, real spend
