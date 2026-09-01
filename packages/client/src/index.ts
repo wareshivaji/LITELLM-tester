@@ -84,12 +84,22 @@ export {
 export type { ToolCall, ToolCallIssue, ToolPreset, ToolTurn } from './tools.js';
 export { extractResponsesToolCalls } from './tools.js';
 export {
+  checkMcpItems,
+  offeredToolNames,
+  readMcpBrokeredCalls,
+  readMcpListings,
   readMcpServers,
   readMcpTools,
   readMcpToolEvent,
   readPolicy,
   summariseMcpCalls,
   tallyPolicies,
+} from './mcp.js';
+export type {
+  McpBrokeredCall,
+  McpItemIssue,
+  McpListing,
+  McpOfferedTool,
 } from './mcp.js';
 export type {
   McpCallSummary,

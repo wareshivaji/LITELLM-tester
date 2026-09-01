@@ -336,9 +336,16 @@ export function PromptLab(props: PromptLabProps) {
                         </span>
                       </div>
 
-                      {o.toolCalls.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {o.toolCalls.map((c, i) => (
+                      {/*
+                        Two kinds of tool call, never merged. A sky chip is a
+                        call handed BACK for the client to run; a violet one is
+                        a tool the GATEWAY already ran. Showing them as one list
+                        would erase the distinction the page exists to observe.
+                      */}
+                      {(o.toolCalls ?? []).length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                          <span className="text-[10px] text-zinc-600">yours to run:</span>
+                          {(o.toolCalls ?? []).map((c, i) => (
                             <span
                               key={i}
                               className="mono rounded bg-sky-500/10 px-1 text-[10px] text-sky-300"
@@ -349,13 +356,59 @@ export function PromptLab(props: PromptLabProps) {
                         </div>
                       )}
 
+                      {(o.brokeredCalls ?? []).length > 0 && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <span className="text-[10px] text-zinc-600">gateway ran:</span>
+                          {(o.brokeredCalls ?? []).map((c, i) => (
+                            <span
+                              key={i}
+                              className="mono rounded bg-violet-500/10 px-1 text-[10px] text-violet-300"
+                              title={`${c.serverLabel} · ${c.argumentsText}`}
+                            >
+                              {c.name}
+                              {c.error !== undefined && ' ✕'}
+                              {c.truncated && ' ✂'}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {(o.offeredTools ?? []).length > 0 && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-[10px] text-zinc-600">
+                            {(o.offeredTools ?? []).length} tools offered to the model
+                          </summary>
+                          <div className="mono mt-1 text-[10px] leading-relaxed text-zinc-500">
+                            {(o.offeredTools ?? []).join(', ')}
+                          </div>
+                          <p className="mt-1 text-[10px] leading-tight text-zinc-600">
+                            A blocked tool is absent from this list rather than refused — so this is
+                            where a BLOCK policy is proved, not in the answer text.
+                          </p>
+                        </details>
+                      )}
+
+                      {(o.mcpIssues ?? []).length > 0 && (
+                        <ul className="mt-1.5 space-y-0.5 border-t border-zinc-800 pt-1.5">
+                          {(o.mcpIssues ?? []).map((issue, i) => (
+                            <li key={i} className="text-[10px] leading-tight text-amber-300/80">
+                              <span className="mono text-amber-400">{issue.kind}</span> — {issue.detail}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
                       {o.text.trim().length > 0 ? (
                         <p className="mt-1.5 whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-300">
                           {o.text.length > 400 ? `${o.text.slice(0, 400)}…` : o.text}
                         </p>
                       ) : (
                         <p className="mt-1.5 text-[11px] italic text-zinc-600">
-                          {o.toolCalls.length > 0 ? 'no text — tool call only' : 'no text'}
+                          {(o.toolCalls ?? []).length > 0
+                            ? 'no text — tool call only'
+                            : (o.brokeredCalls ?? []).length > 0
+                              ? 'no text — the gateway ran a tool and the model said nothing'
+                              : 'no text'}
                         </p>
                       )}
 

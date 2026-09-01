@@ -219,3 +219,245 @@ export function summariseMcpCalls(chunks: readonly StreamChunk[]): McpCallSummar
   }
   return out;
 }
+
+// ── Buffered MCP output items ────────────────────────────────────────────────
+//
+// Everything above this line reads the *streaming* `mcp_tool_call` frames the
+// chat path emits. These read the *buffered* `output[]` items the Responses path
+// returns, which are a different artifact with different field names.
+//
+// Missing that distinction was a real gap: `extractResponsesToolCalls` only
+// matches `function_call`, so a brokered MCP call — the gateway running a tool
+// on the caller's behalf — read as "no tool calls at all" on a response where a
+// tool had plainly run. Measured against a live org before this was written.
+//
+// The two are kept apart deliberately and must never be merged into one list. A
+// `function_call` is handed BACK for the client to execute; an `mcp_call` was
+// already executed BY the gateway. Reporting them as one kind of thing would
+// destroy the single distinction this whole tool exists to observe.
+
+/** One `mcp_call` item: a tool the GATEWAY ran, reported after the fact. */
+export interface McpBrokeredCall {
+  id: string;
+  /** As advertised to the client — the upstream name, not the wire name. */
+  name: string;
+  argumentsText: string;
+  argumentsParsed?: unknown;
+  /** Which server ran it. See `McpItemIssue` for why this may be unusable. */
+  serverLabel: string;
+  output?: string;
+  error?: string;
+  /** Non-standard: OpenAI's `McpCall` has no status field. Recorded, not required. */
+  status?: string;
+  /** True when the output carries the gateway's own truncation marker. */
+  truncated: boolean;
+}
+
+const TRUNCATION_MARKER = 'truncated by the gateway';
+
+/** Read every `mcp_call` item out of a buffered Responses body. */
+export function readMcpBrokeredCalls(body: unknown): McpBrokeredCall[] {
+  if (!isRecord(body)) return [];
+  const output = body['output'];
+  if (!Array.isArray(output)) return [];
+
+  const out: McpBrokeredCall[] = [];
+  for (const raw of output) {
+    if (!isRecord(raw)) continue;
+    if (raw['type'] !== 'mcp_call') continue;
+
+    const argsText = str(raw['arguments']);
+    const outputText = typeof raw['output'] === 'string' ? raw['output'] : undefined;
+    const call: McpBrokeredCall = {
+      id: str(raw['id']),
+      name: str(raw['name']),
+      argumentsText: argsText,
+      serverLabel: str(raw['server_label']),
+      truncated: outputText !== undefined && outputText.includes(TRUNCATION_MARKER),
+    };
+    if (argsText.length > 0) {
+      try {
+        call.argumentsParsed = JSON.parse(argsText);
+      } catch {
+        // Malformed arguments are the finding, not a crash.
+      }
+    }
+    if (outputText !== undefined) call.output = outputText;
+    const error = raw['error'];
+    if (typeof error === 'string' && error.length > 0) call.error = error;
+    const status = str(raw['status']);
+    if (status.length > 0) call.status = status;
+    out.push(call);
+  }
+  return out;
+}
+
+/** One tool as named inside an `mcp_list_tools` item. */
+export interface McpOfferedTool {
+  name: string;
+  description?: string;
+  /** Present in this gateway's output; not part of OpenAI's `Tool` type. */
+  serverLabel?: string;
+  /** OpenAI declares `input_schema` REQUIRED. Absent here more often than not. */
+  hasInputSchema: boolean;
+}
+
+/** One `mcp_list_tools` item: what the model was actually offered. */
+export interface McpListing {
+  id: string;
+  /**
+   * Raw value. May be several server names joined with commas rather than one
+   * server — see `checkMcpItems`.
+   */
+  serverLabel: string;
+  /** `serverLabel` split on commas, the only way to recover the names. */
+  serverLabels: string[];
+  tools: McpOfferedTool[];
+  error?: string;
+  status?: string;
+}
+
+/** Read every `mcp_list_tools` item out of a buffered Responses body. */
+export function readMcpListings(body: unknown): McpListing[] {
+  if (!isRecord(body)) return [];
+  const output = body['output'];
+  if (!Array.isArray(output)) return [];
+
+  const out: McpListing[] = [];
+  for (const raw of output) {
+    if (!isRecord(raw)) continue;
+    if (raw['type'] !== 'mcp_list_tools') continue;
+
+    const label = str(raw['server_label']);
+    const tools: McpOfferedTool[] = [];
+    const rawTools = raw['tools'];
+    if (Array.isArray(rawTools)) {
+      for (const t of rawTools) {
+        if (!isRecord(t)) continue;
+        const tool: McpOfferedTool = {
+          name: str(t['name'], str(t['tool'])),
+          // Both spellings, because the two MCP endpoints disagree already.
+          hasInputSchema: t['input_schema'] !== undefined || t['inputSchema'] !== undefined,
+        };
+        const description = str(t['description']);
+        if (description.length > 0) tool.description = description;
+        const serverLabel = str(t['server_label']);
+        if (serverLabel.length > 0) tool.serverLabel = serverLabel;
+        tools.push(tool);
+      }
+    }
+
+    const listing: McpListing = {
+      id: str(raw['id']),
+      serverLabel: label,
+      serverLabels: label
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+      tools,
+    };
+    const error = raw['error'];
+    if (typeof error === 'string' && error.length > 0) listing.error = error;
+    const status = str(raw['status']);
+    if (status.length > 0) listing.status = status;
+    out.push(listing);
+  }
+  return out;
+}
+
+/** A divergence from the OpenAI item contract, stated in client terms. */
+export interface McpItemIssue {
+  kind:
+    | 'server-label-is-a-list'
+    | 'missing-input-schema'
+    | 'nonstandard-status'
+    | 'output-truncated'
+    | 'listing-absent-though-tool-ran';
+  detail: string;
+}
+
+/**
+ * Check the buffered MCP items against OpenAI's published item contract, read
+ * from the vendored `openai` SDK types rather than from memory.
+ *
+ * Reported, never thrown: the job is to make a divergence visible to whoever is
+ * reading the response, not to decide it is fatal.
+ */
+export function checkMcpItems(body: unknown): McpItemIssue[] {
+  const issues: McpItemIssue[] = [];
+  const listings = readMcpListings(body);
+  const calls = readMcpBrokeredCalls(body);
+
+  for (const listing of listings) {
+    // OpenAI's `server_label` names ONE server, and it emits one item per
+    // server. A comma-joined value matches no server a client can look up.
+    if (listing.serverLabels.length > 1) {
+      issues.push({
+        kind: 'server-label-is-a-list',
+        detail:
+          `server_label carries ${String(listing.serverLabels.length)} server names joined by ` +
+          `commas ("${listing.serverLabel}"). OpenAI emits one mcp_list_tools item per server ` +
+          `with a single-server label, so a client resolving this value finds nothing.`,
+      });
+    }
+
+    const noSchema = listing.tools.filter((t) => !t.hasInputSchema).map((t) => t.name);
+    if (noSchema.length > 0) {
+      issues.push({
+        kind: 'missing-input-schema',
+        detail:
+          `${String(noSchema.length)} of ${String(listing.tools.length)} offered tools carry no ` +
+          `input_schema, which OpenAI declares required: ${noSchema.slice(0, 4).join(', ')}` +
+          `${noSchema.length > 4 ? ' and more' : ''}. The schemas do exist on /v1/mcp/tools, so a ` +
+          `client rendering this listing cannot show argument shapes it could have been given.`,
+      });
+    }
+
+    if (listing.status !== undefined) {
+      issues.push({
+        kind: 'nonstandard-status',
+        detail: `mcp_list_tools carries status="${listing.status}"; OpenAI's item has no status field.`,
+      });
+    }
+  }
+
+  for (const call of calls) {
+    if (call.truncated) {
+      issues.push({
+        kind: 'output-truncated',
+        detail:
+          `mcp_call "${call.name}" output was truncated by the gateway at ` +
+          `${String(call.output?.length ?? 0)} characters. The MODEL saw the truncated result, so ` +
+          `the answer is built on less than the tool actually returned.`,
+      });
+    }
+    if (call.status !== undefined) {
+      issues.push({
+        kind: 'nonstandard-status',
+        detail: `mcp_call carries status="${call.status}"; OpenAI's item has no status field.`,
+      });
+    }
+  }
+
+  // Measured on a live org: a request where no tool ran carried no listing at
+  // all, though the model demonstrably had the tools. So a client cannot tell
+  // "nothing was offered" from "something was offered and not used".
+  if (calls.length > 0 && listings.length === 0) {
+    issues.push({
+      kind: 'listing-absent-though-tool-ran',
+      detail:
+        'A tool ran but no mcp_list_tools item was emitted, so there is no record of what was offered.',
+    });
+  }
+
+  return issues;
+}
+
+/** Offered-tool names across every listing, deduplicated and sorted. */
+export function offeredToolNames(body: unknown): string[] {
+  const names = new Set<string>();
+  for (const listing of readMcpListings(body)) {
+    for (const tool of listing.tools) if (tool.name.length > 0) names.add(tool.name);
+  }
+  return [...names].sort();
+}

@@ -170,6 +170,9 @@ const outcome = (over) => ({
   status: 200,
   text: over.text ?? '',
   toolCalls: over.toolCalls ?? [],
+  brokeredCalls: over.brokeredCalls ?? [],
+  offeredTools: over.offeredTools ?? [],
+  mcpIssues: over.mcpIssues ?? [],
   failures: over.failures ?? [],
   ok: (over.failures ?? []).length === 0,
   totalMs: 1,
@@ -255,6 +258,17 @@ check(
   'and halves when one surface is dropped',
   estimateRun([{ maxTokens: 10 }, { maxTokens: 20 }], ['responses']),
   { calls: 2, maxOutputTokens: 30 },
+);
+
+// A partial outcome — a field absent despite the type — must not take the whole
+// run down with it. These objects arrive as plain JSON over SSE.
+check(
+  'comparing outcomes with brokeredCalls missing does not throw',
+  comparePromptOutcomes([
+    { surface: 'chat.completions', text: 'x', toolCalls: [], failures: [], ok: true, exchangeId: 'a', status: 200, totalMs: 1 },
+    { surface: 'responses', text: 'x', toolCalls: [], failures: [], ok: true, exchangeId: 'b', status: 200, totalMs: 1 },
+  ]).agrees,
+  true,
 );
 
 done();

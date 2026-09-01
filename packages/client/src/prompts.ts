@@ -32,6 +32,13 @@
  */
 
 import type { Exchange } from './types.js';
+import {
+  checkMcpItems,
+  offeredToolNames,
+  readMcpBrokeredCalls,
+  type McpBrokeredCall,
+  type McpItemIssue,
+} from './mcp.js';
 import { extractResponsesToolCalls, extractToolCalls, type ToolCall } from './tools.js';
 
 /** The surfaces prompt testing covers. Deliberately only these two. */
@@ -56,6 +63,18 @@ export interface PromptExpectation {
   callsTool?: string;
   /** No tool call at all. */
   noToolCalls?: boolean;
+  /**
+   * The GATEWAY must have run an MCP tool with this name.
+   *
+   * Separate from `callsTool` on purpose: that one means the model asked the
+   * client to run something, this one means the gateway already ran it. A test
+   * that cannot tell those apart is not testing brokering.
+   */
+  brokersTool?: string;
+  /** The named tool must appear in the offered list (`mcp_list_tools`). */
+  offersTool?: string;
+  /** The named tool must NOT be offered — how a BLOCK policy is proved. */
+  withholdsTool?: string;
   /** The answer must be non-empty after trimming. */
   nonEmpty?: boolean;
   /**
@@ -274,7 +293,14 @@ export interface PromptOutcome {
   status: number | null;
   /** The assistant's text, however that surface carries it. */
   text: string;
+  /** Calls handed BACK for the client to run. */
   toolCalls: ToolCall[];
+  /** Calls the GATEWAY ran itself. Never merged with the above. */
+  brokeredCalls: McpBrokeredCall[];
+  /** What the model was offered, per `mcp_list_tools`. */
+  offeredTools: string[];
+  /** Divergences from OpenAI's MCP item contract. Reported, not failed on. */
+  mcpIssues: McpItemIssue[];
   /** Checks that did not hold. Empty means it behaved. */
   failures: string[];
   ok: boolean;
@@ -331,6 +357,12 @@ export function evaluatePromptOutcome(
   const body = exchange.response?.body;
   const text = readAnswerText(surface, body);
   const toolCalls = readPromptToolCalls(surface, body);
+  // Brokered calls and the offered listing only exist on Responses; on chat
+  // these come back empty, which is itself the honest answer — the chat path
+  // emits no transparency items at all.
+  const brokeredCalls = readMcpBrokeredCalls(body);
+  const offeredTools = offeredToolNames(body);
+  const mcpIssues = checkMcpItems(body);
   const failures: string[] = [];
 
   if (exchange.transportError !== undefined) {
@@ -368,6 +400,29 @@ export function evaluatePromptOutcome(
     if (e.noToolCalls === true && toolCalls.length > 0) {
       failures.push(`expected no tool calls, got ${toolCalls.map((c) => c.name).join(', ')}`);
     }
+    if (e.brokersTool !== undefined && !brokeredCalls.some((c) => c.name === e.brokersTool)) {
+      const got = brokeredCalls.length > 0 ? brokeredCalls.map((c) => c.name).join(', ') : 'none';
+      failures.push(`expected the gateway to run "${e.brokersTool}", it ran ${got}`);
+    }
+    if (e.offersTool !== undefined && !offeredTools.includes(e.offersTool)) {
+      failures.push(
+        offeredTools.length === 0
+          ? `expected "${e.offersTool}" to be offered, but no mcp_list_tools item was emitted at all`
+          : `expected "${e.offersTool}" to be offered, offered: ${offeredTools.join(', ')}`,
+      );
+    }
+    // A withheld tool must be absent from a listing that EXISTS. With no
+    // listing there is nothing to be absent from, and calling that a pass would
+    // report "blocked" on any response that simply never listed anything.
+    if (e.withholdsTool !== undefined) {
+      if (offeredTools.length === 0) {
+        failures.push(
+          `cannot tell whether "${e.withholdsTool}" was withheld: no mcp_list_tools item was emitted`,
+        );
+      } else if (offeredTools.includes(e.withholdsTool)) {
+        failures.push(`expected "${e.withholdsTool}" to be withheld, but it was offered`);
+      }
+    }
   }
 
   return {
@@ -376,6 +431,9 @@ export function evaluatePromptOutcome(
     status,
     text,
     toolCalls,
+    brokeredCalls,
+    offeredTools,
+    mcpIssues,
     failures,
     ok: failures.length === 0,
     totalMs: exchange.timings.totalMs,
@@ -410,11 +468,28 @@ export function comparePromptOutcomes(outcomes: readonly PromptOutcome[]): Promp
     );
   }
 
-  const namesA = [...a.toolCalls.map((c) => c.name)].sort().join(',');
-  const namesB = [...b.toolCalls.map((c) => c.name)].sort().join(',');
+  const namesA = [...(a.toolCalls ?? []).map((c) => c.name)].sort().join(',');
+  const namesB = [...(b.toolCalls ?? []).map((c) => c.name)].sort().join(',');
   if (namesA !== namesB) {
     differences.push(
       `different tool calls — ${a.surface}: [${namesA || 'none'}], ${b.surface}: [${namesB || 'none'}]`,
+    );
+  }
+
+  // Brokered work compared separately. A surface that runs a tool and one that
+  // does not have behaved differently even when both end in the same prose,
+  // and on today's gateway this is expected rather than surprising: chat emits
+  // no transparency items, so it reports nothing brokered by construction.
+  // `?? []` rather than trusting the type: these outcomes arrive over SSE as
+  // plain JSON, so an older or partial payload can be missing the field
+  // entirely. Crashing the comparison would lose every result in the run.
+  const brokeredA = [...(a.brokeredCalls ?? []).map((c) => c.name)].sort().join(',');
+  const brokeredB = [...(b.brokeredCalls ?? []).map((c) => c.name)].sort().join(',');
+  if (brokeredA !== brokeredB) {
+    differences.push(
+      `different brokered tools — ${a.surface}: [${brokeredA || 'none'}], ` +
+        `${b.surface}: [${brokeredB || 'none'}]. Note chat emits no mcp_call items at all, so a ` +
+        `difference here may mean "not reported" rather than "not run".`,
     );
   }
 
