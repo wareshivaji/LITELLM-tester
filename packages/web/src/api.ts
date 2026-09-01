@@ -1,6 +1,8 @@
 import { SSEParser } from '@tokenshield/client';
 import type {
   AuthScheme,
+  PromptResult,
+  PromptSurfaceId,
   Exchange,
   ExchangeSummary,
   KeyKind,
@@ -252,7 +254,89 @@ async function runScenarios(
   dispatch(parser.flush(0));
 }
 
+export interface PromptCaseInfo {
+  id: string;
+  title: string;
+  why: string;
+  prompt: string;
+  system?: string;
+  maxTokens: number;
+  useMcp: boolean;
+  tools: string;
+  expect: Record<string, unknown>;
+}
+
+export interface PromptCatalogue {
+  mcpServerUrl: string;
+  surfaces: PromptSurfaceId[];
+  cases: PromptCaseInfo[];
+}
+
+export interface PromptDryRun {
+  dryRun: true;
+  model: string;
+  estimate: { calls: number; maxOutputTokens: number };
+  requests: Array<{ caseId: string; surface: PromptSurfaceId; path: string; body: unknown }>;
+}
+
+export async function runPrompts(
+  body: Record<string, unknown>,
+  handlers: {
+    onStart: (info: { total: number; model: string; estimate: { calls: number; maxOutputTokens: number } }) => void;
+    onResult: (result: PromptResult) => void;
+    onDone: () => void;
+    onError: (message: string) => void;
+    signal?: AbortSignal;
+  },
+): Promise<void> {
+  const res = await fetch('/api/prompts/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    ...(handlers.signal !== undefined ? { signal: handlers.signal } : {}),
+  });
+  if (!res.ok || res.body === null) {
+    const text = await res.text();
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      message = (JSON.parse(text) as { error?: string }).error ?? message;
+    } catch {
+      if (text.length > 0) message = text;
+    }
+    handlers.onError(message);
+    return;
+  }
+
+  const parser = new SSEParser();
+  const reader = res.body.getReader();
+  const dispatch = (frames: StreamChunk[]): void => {
+    for (const f of frames) {
+      if (f.event === 'start') {
+        handlers.onStart(f.parsed as { total: number; model: string; estimate: { calls: number; maxOutputTokens: number } });
+      } else if (f.event === 'result') handlers.onResult(f.parsed as PromptResult);
+      else if (f.event === 'done') handlers.onDone();
+      else if (f.event === 'error') {
+        handlers.onError((f.parsed as { error?: string })?.error ?? 'Prompt run error');
+      }
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value !== undefined) dispatch(parser.push(value, 0));
+  }
+  dispatch(parser.flush(0));
+}
+
 export const api = {
+  promptCases: () => json<PromptCatalogue>('/api/prompts/cases'),
+
+  promptDryRun: (body: Record<string, unknown>) =>
+    json<PromptDryRun>('/api/prompts/run', {
+      method: 'POST',
+      body: JSON.stringify({ ...body, dryRun: true }),
+    }),
+
   config: () => json<LabConfigResponse>('/api/config'),
 
   addProfile: (body: { label: string; baseUrl: string }) =>

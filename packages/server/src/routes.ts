@@ -33,7 +33,14 @@ import {
   surfaceById,
   TokenShieldClient,
   toolPresetById,
+  PROMPT_CASES,
+  buildPromptBody,
+  evaluatePromptOutcome,
+  summarisePromptResult,
+  estimateRun,
+  PROMPT_SURFACES,
 } from '@tokenshield/client';
+import type { PromptSurfaceId } from '@tokenshield/client';
 import type {
   AuthScheme,
   CreateApiKeyRequest,
@@ -62,6 +69,13 @@ interface TargetBody {
   profileId?: unknown;
   keyAlias?: unknown;
   scheme?: unknown;
+}
+
+interface PromptRunBody extends TargetBody {
+  caseIds?: unknown;
+  surfaces?: unknown;
+  model?: unknown;
+  dryRun?: unknown;
 }
 
 interface ExchangeBody extends TargetBody {
@@ -978,6 +992,120 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     });
     store.add(exchange);
     return exchange;
+  });
+
+  // ── Prompt-based testing ───────────────────────────────────────────────────
+
+  app.get('/api/prompts/cases', () => ({
+    // The lab's own MCP server, so a case with `useMcp` has somewhere to point
+    // without anyone configuring an org.
+    mcpServerUrl: `http://127.0.0.1:${config.port}/mock-mcp`,
+    surfaces: PROMPT_SURFACES,
+    cases: PROMPT_CASES.map((c) => ({
+      id: c.id,
+      title: c.title,
+      why: c.why,
+      prompt: c.prompt,
+      ...(c.system !== undefined ? { system: c.system } : {}),
+      maxTokens: c.maxTokens,
+      useMcp: c.useMcp === true,
+      tools: c.tools ?? 'none',
+      expect: c.expect,
+    })),
+  }));
+
+  /**
+   * Run prompt cases across both surfaces.
+   *
+   * Sequential, like the scenario runner and for the same reason: a burst turns
+   * half the run into rate-limit rejections that have nothing to do with the
+   * prompts being asked.
+   *
+   * `dryRun` builds every request body and returns it WITHOUT sending, so the
+   * exact bytes and the cost ceiling can be reviewed before a single token is
+   * spent. Every case here reaches a provider, so being able to see what would
+   * be sent is not a nicety.
+   */
+  app.post<{ Body: PromptRunBody }>('/api/prompts/run', async (request, reply) => {
+    const raw = request.body ?? {};
+    const t = resolveTarget(raw);
+    if (!t.ok) return reply.status(400).send({ error: t.error });
+    if (t.value.secret === null) {
+      return reply.status(400).send({
+        error: 'Prompt testing needs a credential — every case reaches a provider. Pass "keyAlias".',
+      });
+    }
+
+    const wanted = Array.isArray(raw.caseIds) ? raw.caseIds.filter((c) => typeof c === 'string') : [];
+    const cases = wanted.length > 0
+      ? PROMPT_CASES.filter((c) => wanted.includes(c.id))
+      : [...PROMPT_CASES];
+    if (cases.length === 0) return reply.status(400).send({ error: 'No matching prompt cases.' });
+
+    const rawSurfaces: unknown[] = Array.isArray(raw.surfaces) ? raw.surfaces : [...PROMPT_SURFACES];
+    const surfaces: PromptSurfaceId[] = PROMPT_SURFACES.filter((sfc) => rawSurfaces.includes(sfc));
+    if (surfaces.length === 0) return reply.status(400).send({ error: 'No valid surfaces selected.' });
+
+    const model = typeof raw.model === 'string' && raw.model.length > 0 ? raw.model : 'bedrock-nova-micro';
+    const mcpServerUrl = `http://127.0.0.1:${config.port}/mock-mcp`;
+    const estimate = estimateRun(cases, surfaces);
+
+    if (raw.dryRun === true) {
+      return {
+        dryRun: true,
+        model,
+        estimate,
+        requests: cases.flatMap((c) =>
+          surfaces.map((sfc) => ({
+            caseId: c.id,
+            surface: sfc,
+            path: sfc === 'responses' ? '/v1/responses' : '/v1/chat/completions',
+            body: buildPromptBody(sfc, c, { model, mcpServerUrl }),
+          })),
+        ),
+      };
+    }
+
+    const client = clientFor(t.value);
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    const send = (event: string, data: unknown): void => {
+      reply.raw.write(`event: ${event}
+data: ${JSON.stringify(data)}
+
+`);
+    };
+
+    // The client can vanish mid-run. Listen on the ServerResponse, not the
+    // request: Node consumes the request body and fires `close` there almost
+    // immediately, which would abandon every run at the first case.
+    let aborted = false;
+    reply.raw.on('close', () => {
+      aborted = true;
+    });
+
+    send('start', { total: cases.length * surfaces.length, model, estimate });
+
+    for (const c of cases) {
+      if (aborted) break;
+      const outcomes = [];
+      for (const sfc of surfaces) {
+        if (aborted) break;
+        const surface = surfaceById(sfc);
+        if (surface === undefined) continue;
+        const exchange = await client.call(surface, buildPromptBody(sfc, c, { model, mcpServerUrl }));
+        store.add(exchange);
+        outcomes.push(evaluatePromptOutcome(sfc, c, exchange));
+      }
+      if (outcomes.length > 0) send('result', summarisePromptResult(c, outcomes));
+    }
+
+    if (!aborted) send('done', { ok: true });
+    reply.raw.end();
+    return reply;
   });
 
   // ── Scenarios ──────────────────────────────────────────────────────────────

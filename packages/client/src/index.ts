@@ -2,6 +2,27 @@ export * from './types.js';
 export { classify, detectEnvelope, normalizeError, verdictLabel } from './classify.js';
 export { parseBudget, parseGatewaySignal } from './signal.js';
 export {
+  buildPromptBody,
+  comparePromptOutcomes,
+  estimateRun,
+  evaluatePromptOutcome,
+  mcpToolBlock,
+  PROMPT_CASES,
+  PROMPT_SURFACES,
+  readAnswerText,
+  readPromptToolCalls,
+  summarisePromptResult,
+} from './prompts.js';
+export type {
+  BuildOptions,
+  PromptCase,
+  PromptComparison,
+  PromptExpectation,
+  PromptOutcome,
+  PromptResult,
+  PromptSurfaceId,
+} from './prompts.js';
+export {
   isSecretBodyKey,
   isSecretHeader,
   maskSecret,

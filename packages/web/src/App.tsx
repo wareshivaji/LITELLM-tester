@@ -11,6 +11,7 @@ import { useModelCatalogue } from './hooks/useModelCatalogue';
 import { Connect } from './pages/Connect';
 import { Governance } from './pages/Governance';
 import { Playground } from './pages/Playground';
+import { PromptLab } from './pages/PromptLab';
 import { Scenarios } from './pages/Scenarios';
 import { SdkCompare } from './pages/SdkCompare';
 import { Streaming } from './pages/Streaming';
@@ -39,6 +40,7 @@ const NAV: ReadonlyArray<{
     items: [
       { id: 'playground', label: 'Playground', blurb: 'One request, eight surfaces', spends: true },
       { id: 'streaming', label: 'Streaming', blurb: 'A response over time', spends: true },
+      { id: 'prompts', label: 'Prompt lab', blurb: 'One prompt, both surfaces', spends: true },
       { id: 'sdk-compare', label: 'SDK compare', blurb: 'What a real SDK reports', spends: true },
     ],
   },
@@ -257,6 +259,8 @@ export function App() {
             <Streaming {...pageProps} catalogue={catalogue} />
           ) : page === 'sdk-compare' ? (
             <SdkCompare {...pageProps} catalogue={catalogue} />
+          ) : page === 'prompts' ? (
+            <PromptLab {...pageProps} catalogue={catalogue} />
           ) : page === 'scenarios' ? (
             <Scenarios {...pageProps} config={config} catalogue={catalogue} />
           ) : page === 'tools' ? (
