@@ -261,9 +261,21 @@ whether the gateway is wrong or whether **we** assumed something. So every scena
 `reference` — `openai`, `mcp-spec`, `litellm` or `measured` — and it is printed on the row and in
 the exported report.
 
-There is also `cloudgov`, for a feature with no external equivalent at all. Per-key tool blocking is
-the case that forced it: LiteLLM has no such concept, so there is nothing outside to measure it
-against, and a `litellm` expectation there would have been an invented reference. The only thing
+There is also `cloudgov`, for a feature with no external equivalent at all.
+
+**Corrected 2026-09-01.** The case originally cited for it was per-key tool blocking, on the grounds
+that LiteLLM had no such concept. With LiteLLM cloned locally that turned out to be wrong — it has
+`mcp_tool_permissions` at key *and* team level, both `allowed_tools` and `disallowed_tools`, and it
+intersects team with key so the narrower scope wins, which is our org/key rule under a different
+name. `litellm` is therefore a valid reference for tool governance, and the claim that drove this
+value was a bad one.
+
+The value survives on narrower ground: what has no external analogue is a **single stored policy
+enum** read as a blacklist at org level and an allow-list at key level, plus the fail-open default
+for a key that says nothing about MCP. LiteLLM expresses the same governance as explicit allow/deny
+lists, which admit no such dual reading. Worth recording that the error was mine and lasted two
+turns: asserting an absence is far riskier than asserting a presence, because nothing contradicts it
+until someone goes looking. The only thing
 assertable from the client side is the compatibility invariant — enforcing the policy must not
 change the shape of what a client sends or parses. That holds by construction on the advertising
 path, since a blocked tool is not listed and so is never called. It stops holding for a client that
@@ -452,6 +464,20 @@ Recorded because they are the reason the tests exist.
 
 What the tool has established about TokenShield. Measured against **Prod US** on
 `bedrock-nova-micro` with a Bedrock-scoped key, on the dates given.
+
+### Measured against LiteLLM source (v1.100.0, read 2026-09-01)
+
+LiteLLM cloned to `~/Cloudgov/litellm`, HEAD `4db165379a`. Full contract in
+[LITELLM_CONTRACT.md](LITELLM_CONTRACT.md); the differences that reach a client:
+
+| Point | LiteLLM | TokenShield |
+|---|---|---|
+| Aggregated tool separator | `-`, **env-configurable**, and validated out of server names | `__`, hardcoded, **not** validated — a server named with `__` yields an unsplittable wire name |
+| Long tool names | opt-in short deterministic server id (`LITELLM_USE_SHORT_MCP_TOOL_PREFIX`) | truncate at 64 chars, digest on collision |
+| Blocked tool | **403** `{"detail":{"error":"..."}}` | **200**, the *model* is told. Correct for brokering; but the passthrough `POST /v1/mcp` surface should arguably match LiteLLM |
+| Unknown name in `x-mcp-servers` | fails **closed** | fails to zero servers — same direction |
+| Unrecognised access mode | — | fails **OPEN** (`ScopeForKey`), the opposite direction to everything else |
+| Per-key tool policy | explicit `allowed_tools` + `disallowed_tools` lists, team ∩ key | one enum, read as blacklist at org level and allow-list at key level |
 
 ### Responses API and MCP (gateway branch `feature/responses-api-mcp-tools`, 2026-08-31)
 

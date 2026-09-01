@@ -203,7 +203,13 @@ therefore written against external references, and each scenario names which one
 
 **No external reference exists — `reference: 'cloudgov'`:**
 
-Per-key tool blocking has **no LiteLLM equivalent**, so there is no outside contract to measure it
+> **CORRECTED 2026-09-01 from LiteLLM source.** The claim below — that per-key tool blocking has no
+> LiteLLM equivalent — is **wrong**. LiteLLM has `mcp_tool_permissions` at key and team level, both
+> `allowed_tools` and `disallowed_tools`, and intersects team with key. See
+> [LITELLM_CONTRACT.md](LITELLM_CONTRACT.md) §5. What remains CloudGov-only is the single policy
+> enum read two different ways at org and key level, and the fail-open default.
+
+Per-key tool blocking has no LiteLLM equivalent, so there is no outside contract to measure it
 against, and writing one would mean inventing a reference. Decided 2026-08-31: it is not compared
 to LiteLLM at all.
 

@@ -6,6 +6,12 @@ Read from <https://docs.litellm.ai/docs/mcp> and
 <https://docs.litellm.ai/docs/mcp_troubleshoot> on **2026-08-31**, and from the vendored
 `openai@4.104.0` TypeScript definitions in `node_modules/openai/resources/`.
 
+> **VERIFIED FROM SOURCE 2026-09-01.** LiteLLM is now cloned locally at `~/Cloudgov/litellm` —
+> **v1.100.0**, branch `litellm_internal_staging`, HEAD `4db165379a` (*"fix mcp alias grant
+> persistence"*). Several claims below were read from the code rather than the docs, and **two of
+> them corrected an error of mine**. Anything still resting on docs alone says so. The checkout is
+> 5,450 Python files and 2,551 test files, 72 of them MCP-specific.
+
 Why it is separate from `GATEWAY_SURFACE.md`: that file records what *our* gateway does. This one
 records what a client is **entitled to**. Keeping them apart is the whole point — measuring the
 gateway against itself can only ever confirm it does what it does.
@@ -39,15 +45,30 @@ response"*. So the declaration is explicit and the brokering is transparent — 
 
 > "LiteLLM namespaces multiple MCP servers by prefixing each tool name with its MCP server name."
 
-Pattern: **`{server_name}_{tool_name}`** — a **single** underscore. Documented example:
-`github_mcp-search_issues`.
+**CORRECTED 2026-09-01 — the separator is a HYPHEN.** From
+`litellm/proxy/_experimental/mcp_server/utils.py:53`:
+
+```python
+MCP_TOOL_PREFIX_SEPARATOR: Final = os.environ.get("MCP_TOOL_PREFIX_SEPARATOR", "-")
+MCP_TOOL_PREFIX_FORMAT: Final = "{server_name}{separator}{tool_name}"
+```
+
+So the pattern is **`{server_name}-{tool_name}`**, and it is **configurable by environment
+variable**. I previously read it as a single underscore, from the documented example
+`github_mcp-search_issues` — but that is server `github_mcp`, then `-`, then tool `search_issues`.
+The underscore was part of the server name, not the separator.
+
+Two further details from source, both of which TokenShield lacks:
+
+- **The separator is validated out of server names.** `utils.py:238` validates that a server name or
+  alias does not contain the separator, because the round trip splits on the first occurrence
+  (`utils.py:401`). TokenShield hardcodes `__` and does **not** validate, so a server whose name
+  contains `__` yields a wire name that cannot be split back apart.
+- **`LITELLM_USE_SHORT_MCP_TOOL_PREFIX`** swaps the human-readable server name for a deterministic
+  short id, which is how LiteLLM keeps long names under the length cap. TokenShield instead
+  truncates at 64 characters and appends a digest on collision.
 
 `litellm_settings.mcp_aliases` maps friendly names (`github`) onto server names.
-
-**Divergence to check:** TokenShield's own source comment says `<server>__<tool>` — a **double**
-underscore. If that is what it emits, a client that splits on the documented single underscore
-mis-parses every aggregated tool name. Untested against a running gateway; recorded as a question,
-not a finding.
 
 ## 3. Headers
 
@@ -79,15 +100,67 @@ Convention: when pointing LiteLLM at its own MCP gateway, `server_url` is the li
 ## 5. Access control
 
 By API key, by team, by organisation, per-user via `x-litellm-end-user-id`, and a server-level
-`allow_all_keys`. So per-key scoping *is* a LiteLLM concept after all — what appears to have no
-LiteLLM equivalent is per-**tool** blocking at key level. The `cloudgov` reference value stays, with
-that narrower justification.
+`allow_all_keys`.
+
+**CORRECTED 2026-09-01 — per-TOOL blocking at key level DOES exist.** I stated twice that it had no
+LiteLLM equivalent, and created the `cloudgov` reference value on that basis. That was wrong. From
+`litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py`:
+
+```python
+key_obj_perm.mcp_tool_permissions     # per-KEY, per-tool
+team_obj_perm.mcp_tool_permissions    # per-TEAM, per-tool
+allowed_tools = list(set(team_tools) & set(key_tools))   # line 2132 - intersection
+```
+
+There is also `get_allowed_tools_for_server`, `is_tool_allowed_for_server`, a **toolset** layer
+(`resolve_toolset_tool_permissions`) and a user-level ceiling (`_apply_user_tool_ceiling`). The
+`MCPServer` type carries **both** `allowed_tools` and `disallowed_tools`
+(`mcp_server_manager.py:333-334`), and both are read straight from the config YAML (`:2137`) — so
+tool blocking is testable there with no database at all.
+
+Team intersected with key, narrower winning, is the same principle as TokenShield's org/key
+combination.
+
+**So `litellm` is a valid reference for tool governance.** What stays genuinely CloudGov-specific is
+much narrower than I claimed: the per-tool **policy enum** (`ALWAYS_ALLOW`/`BLOCK`) whose single
+stored value means a blacklist at org level and an allow-list at key level, plus the fail-open
+default. LiteLLM models the same governance as explicit allow/deny **lists** instead.
+`reference: 'cloudgov'` stays in the code for that narrower case — see AD-30 — but it must no longer
+be justified as *"no external equivalent exists"*.
 
 ## 6. Error shapes — mostly undocumented
 
-The docs do **not** specify what comes back when an MCP tool fails, a server is unreachable, a key
-lacks permission, or a name in `x-mcp-servers` does not exist. What the troubleshooting guide does
-show:
+**ANSWERED FROM SOURCE 2026-09-01 — a denied tool is a 403.** From
+`mcp_server_manager.py:4923`:
+
+```python
+raise HTTPException(
+    status_code=403,
+    detail={"error": f"Tool '{tool_name}' is not allowed for your key/team on server '{server.name}'. Contact proxy admin for access."},
+)
+```
+
+So **403**, inside FastAPI's `detail` wrapper — `{"detail": {"error": "..."}}`. Not an OpenAI error
+envelope, and `error` holds a human sentence rather than a machine-readable code.
+
+**This is architecturally opposite to TokenShield, and neither is wrong.** TokenShield answers
+**200** and tells the *model* the tool was blocked, because it **brokers** — the model asked for the
+tool, so failing the client's request would punish a caller who made no mistake, and the model can
+write around the gap instead. LiteLLM's default is passthrough, where the **client** called the
+tool, so a 403 to that client is exactly right.
+
+**The test this produces:** TokenShield's `POST /v1/mcp` surface *is* passthrough — there the client
+calls directly. If a blocked `tools/call` on that route answers 200-with-refusal, that is the wrong
+shape for that surface, and LiteLLM's 403 is the reference for it.
+
+**`x-mcp-servers` fails closed.** `user_api_key_auth_mcp.py:99`: the header fails closed when it
+introduces any server not in the path-derived target set, reasoned in the comment as a sign of a
+confused or hostile caller. Same safe direction as TokenShield's matches-nothing-means-zero-servers
+— but note TokenShield's `mcpAccess` mode fails **open** on an unrecognised value, which is the
+opposite.
+
+Still unread: what comes back when the MCP tool itself errors, or the server is unreachable. What
+the troubleshooting guide shows:
 
 - `HTTP/1.1 400 Bad Request` with **`{"detail":"invalid_request"}`** on OAuth redirect validation
   failure. Note the shape: FastAPI's flat `detail`, **not** an OpenAI error envelope. So LiteLLM
@@ -139,7 +212,24 @@ visibly wrong.
 
 | Question | Status |
 |---|---|
-| Aggregated tool namespacing | **Answered** — `{server}_{tool}`, single underscore |
+| Aggregated tool namespacing | **From source** — `{server}-{tool}`, a **hyphen**, env-configurable, separator validated out of server names |
 | Is `x-mcp-servers` the scoping header | **Answered** — yes |
-| Envelope for a blocked or failing MCP tool | **Undocumented.** Must be observed |
-| Behaviour for an unknown name in `x-mcp-servers` | **Undocumented.** Must be observed |
+| Unknown name in `x-mcp-servers` | **From source** — fails **closed** |
+| Envelope for a **blocked** tool | **From source** — `403` + `{"detail":{"error":"..."}}` |
+| Does per-key tool blocking exist in LiteLLM | **From source — YES**, correcting my earlier claim |
+| Envelope for a **failing** tool or unreachable server | Still open. Not documented, not yet read |
+
+## What LiteLLM actually is, and where to mine it
+
+It is a **gateway**, not a testing tool — the same category as TokenShield, not the same category as
+this lab. It ships three things: a Python SDK (`import litellm`), a FastAPI proxy, and a Next.js
+admin UI mounted at `/ui` (`proxy_server.py:2042`).
+
+The part worth mining is its **tests**, which are pytest. `~/Cloudgov/litellm/tests/` holds 2,551
+files, 72 MCP-specific. The two closest to the branch under test:
+
+- `tests/mcp_tests/test_aresponses_api_with_mcp.py` — Responses API with MCP, the exact surface
+- `tests/e2e/mcp/test_mcp_key_access_e2e.py` — per-key MCP access, end to end
+
+That is the nearest thing that exists to an OpenAI-compatibility conformance corpus for this
+surface.

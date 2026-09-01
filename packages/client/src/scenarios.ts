@@ -59,10 +59,20 @@ export type ExpectationSource =
    */
   | 'litellm'
   /**
-   * A CloudGov-specific feature with no external equivalent — per-key tool
-   * blocking is the example. LiteLLM has no such concept, so there is no
-   * outside contract to measure it against and inventing one would be worse
-   * than admitting that.
+   * A CloudGov-specific feature with no external equivalent.
+   *
+   * CORRECTED 2026-09-01. This originally said per-key tool blocking was the
+   * example, because LiteLLM had no such concept. Reading the actual LiteLLM
+   * source proved that wrong: it has `mcp_tool_permissions` at both key and
+   * team level, `allowed_tools` AND `disallowed_tools`, and it intersects team
+   * with key so the narrower wins — the same principle as our org/key rule.
+   *
+   * So tool governance is NOT what this value is for; `litellm` is a valid
+   * reference for that. What is genuinely CloudGov-only is narrower: a single
+   * stored policy enum (`ALWAYS_ALLOW`/`BLOCK`) that means a blacklist at org
+   * level and an allow-list at key level, and the fail-open default for a key
+   * that says nothing. LiteLLM models the same governance as explicit
+   * allow/deny lists, which has no such dual reading.
    *
    * What *is* testable from the client side is the compatibility invariant:
    * enforcing the policy must not change the shape of what a client sends or
