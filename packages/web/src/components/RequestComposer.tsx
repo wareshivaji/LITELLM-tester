@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { probesFor } from '@tokenshield/client';
+import { gapsMovingTo, probesFor, unknownFieldsIn } from '@tokenshield/client';
 import type { SurfaceSpec } from '@tokenshield/client';
 
 import type { Composer } from '../hooks/useComposer';
@@ -57,6 +57,22 @@ export function RequestComposer({
   onSubmit?: () => void;
 }) {
   const probes = showProbes ? probesFor(composer.surface.id) : [];
+
+  // Fields in the body that this surface's contract does not list, per LiteLLM
+  // v1.100.0 (see fields.ts). Deliberately a NOTE and not an error: sending an
+  // out-of-contract field is often the whole point of the test — whether the
+  // gateway rejects it or silently ignores it is the finding. Blocking send
+  // here would remove the only way to ask.
+  const strayFields = composer.parsed.ok
+    ? unknownFieldsIn(composer.surface.id, composer.parsed.value)
+    : [];
+
+  // What a request loses arriving at THIS surface from the other one. Only the
+  // gaps with no replacement are shown: those are the ones that fail silently.
+  const silentLosses = gapsMovingTo(
+    composer.surface.id === 'responses' ? 'responses' : 'chat.completions',
+  ).filter((g) => g.equivalent === null);
+  const showLosses = composer.surface.id === 'responses' || composer.surface.id === 'chat.completions';
 
   return (
     <div className="space-y-5">
@@ -187,6 +203,45 @@ export function RequestComposer({
             <span className="mono text-xs text-rose-400">JSON: {composer.parsed.error}</span>
           )}
         </div>
+
+        {strayFields.length > 0 && (
+          <div className="mt-3 rounded border border-amber-900/50 bg-amber-950/20 px-3 py-2">
+            <p className="text-[11px] leading-relaxed text-amber-200/90">
+              <strong>Not in this surface&rsquo;s contract:</strong>{' '}
+              {strayFields.map((f) => (
+                <code key={f} className="mono mr-1 rounded bg-amber-500/10 px-1 text-amber-300">
+                  {f}
+                </code>
+              ))}
+            </p>
+            <p className="mt-1 text-[10px] leading-tight text-amber-200/60">
+              Per LiteLLM v1.100.0. Sending anyway is allowed and often the point — whether the
+              gateway refuses these or quietly ignores them is the finding. A silently ignored{' '}
+              <code className="mono">max_tokens</code> on Responses caps nothing, so the whole answer
+              is billed.
+            </p>
+          </div>
+        )}
+
+        {showLosses && silentLosses.length > 0 && (
+          <details className="mt-3">
+            <summary className="cursor-pointer text-[11px] text-zinc-500">
+              {silentLosses.length} fields have no equivalent on{' '}
+              <code className="mono">{composer.surface.id}</code>
+            </summary>
+            <ul className="mt-1.5 space-y-1">
+              {silentLosses.map((g) => (
+                <li key={g.field} className="text-[10px] leading-relaxed text-zinc-500">
+                  <code className="mono text-zinc-400">{g.field}</code> — {g.consequence}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[10px] leading-tight text-zinc-600">
+              These are the porting hazards: a request carrying one of them succeeds on this surface
+              and behaves differently, with nothing raised.
+            </p>
+          </details>
+        )}
       </Card>
     </div>
   );

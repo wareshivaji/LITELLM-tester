@@ -59,17 +59,9 @@ export interface SdkOutcome {
 }
 
 /** Surfaces each vendor SDK can actually reach, by our surface id. */
-export const OPENAI_SDK_SURFACES = [
-  'chat.completions',
-  'completions',
-  'embeddings',
-  'responses',
-  'moderations',
-] as const;
+export const OPENAI_SDK_SURFACES = ['chat.completions', 'responses'] as const;
 
-// `messages.count_tokens` is absent from @anthropic-ai/sdk 0.32's typed
-// surface, so it stays raw-only rather than being reached through an untyped
-// escape hatch that would not represent what a customer writes.
+
 /**
  * Surfaces the Anthropic SDK can be pointed at.
  *
@@ -241,27 +233,25 @@ async function callOpenAI(client: OpenAI, surfaceId: string, body: unknown): Pro
   switch (surfaceId) {
     case 'chat.completions':
       return client.chat.completions.create(payload);
-    case 'completions':
-      return client.completions.create(payload);
-    case 'embeddings':
-      return client.embeddings.create(payload);
     case 'responses':
       return client.responses.create(payload);
-    case 'moderations':
-      return client.moderations.create(payload);
     default:
       throw new Error(`The OpenAI SDK has no method for surface "${surfaceId}"`);
   }
 }
 
-async function callAnthropic(client: Anthropic, surfaceId: string, body: unknown): Promise<unknown> {
-  const payload = body as never;
-  switch (surfaceId) {
-    case 'messages':
-      return client.messages.create(payload);
-    default:
-      throw new Error(`The Anthropic SDK has no method for surface "${surfaceId}"`);
-  }
+/**
+ * No reachable surface since 2026-09-02 — `/v1/messages` left the tested scope,
+ * so `ANTHROPIC_SDK_SURFACES` is empty and this always throws. Kept because it
+ * is the only thing that can show what `@anthropic-ai/sdk` extracts from an
+ * error; restoring the surface is the only change needed to use it again.
+ */
+async function callAnthropic(
+  _client: Anthropic,
+  surfaceId: string,
+  _body: unknown,
+): Promise<unknown> {
+  throw new Error(`The Anthropic SDK has no method for surface "${surfaceId}"`);
 }
 
 export async function runWithSdk(

@@ -53,23 +53,7 @@ export function readStreamDelta(surfaceId: string, chunk: StreamChunk): string |
     return typeof content === 'string' ? content : undefined;
   }
 
-  if (surfaceId === 'completions') {
-    const choice = firstChoice(parsed);
-    const text = choice?.['text'];
-    return typeof text === 'string' ? text : undefined;
-  }
-
-  if (surfaceId === 'messages') {
-    // Anthropic: event-per-frame. Text arrives on content_block_delta.
-    if (!isRecord(parsed)) return undefined;
-    if (parsed['type'] !== 'content_block_delta') return undefined;
-    const delta = parsed['delta'];
-    if (!isRecord(delta)) return undefined;
-    const text = delta['text'];
-    return typeof text === 'string' ? text : undefined;
-  }
-
-  if (surfaceId === 'responses') {
+      if (surfaceId === 'responses') {
     if (!isRecord(parsed)) return undefined;
     const type = parsed['type'];
     if (type !== 'response.output_text.delta') return undefined;

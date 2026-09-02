@@ -208,20 +208,7 @@ export function readOutput(surfaceId: string, body: unknown): SurfaceOutput {
     return out;
   }
 
-  if (surfaceId === 'completions') {
-    const choices = body['choices'];
-    if (!Array.isArray(choices) || choices.length === 0) return {};
-    const first = choices[0];
-    if (!isRecord(first)) return {};
-    const out: SurfaceOutput = {};
-    const text = str(first['text']);
-    if (text !== undefined) out.text = text;
-    const finish = str(first['finish_reason']);
-    if (finish !== undefined) out.finishReason = finish;
-    return out;
-  }
-
-  if (surfaceId === 'responses') {
+    if (surfaceId === 'responses') {
     // Two shapes in the wild: a convenience `output_text`, or the structured
     // `output[].content[].text`.
     const direct = str(body['output_text']);
@@ -240,31 +227,7 @@ export function readOutput(surfaceId: string, body: unknown): SurfaceOutput {
     return status !== undefined ? { note: `status: ${status}` } : {};
   }
 
-  if (surfaceId === 'messages') {
-    const text = joinContentParts(body['content']);
-    const out: SurfaceOutput = {};
-    if (text !== undefined) out.text = text;
-    const stop = str(body['stop_reason']);
-    if (stop !== undefined) out.finishReason = stop;
-    return out;
-  }
-
-  if (surfaceId === 'embeddings') {
-    const data = body['data'];
-    if (!Array.isArray(data) || data.length === 0) return {};
-    const first = data[0];
-    const vector = isRecord(first) ? first['embedding'] : undefined;
-    if (!Array.isArray(vector)) return { note: `${data.length} embedding(s) returned.` };
-    const head = vector
-      .slice(0, 6)
-      .map((v) => (typeof v === 'number' ? v.toFixed(5) : String(v)))
-      .join(', ');
-    return {
-      note: `${data.length} vector(s), ${vector.length} dimensions. First values: [${head}, …]`,
-    };
-  }
-
-  if (surfaceId === 'messages.count_tokens' || surfaceId === 'tokens.count') {
+      if (surfaceId === 'tokens.count') {
     const keys = ['input_tokens', 'token_count', 'tokens', 'count', 'total_tokens'];
     for (const key of keys) {
       const value = body[key];
@@ -273,17 +236,7 @@ export function readOutput(surfaceId: string, body: unknown): SurfaceOutput {
     return {};
   }
 
-  if (surfaceId === 'moderations') {
-    const results = body['results'];
-    if (Array.isArray(results) && results.length > 0) {
-      const first = results[0];
-      const flagged = isRecord(first) ? first['flagged'] : undefined;
-      return { note: `flagged: ${String(flagged)}` };
-    }
     return {};
-  }
-
-  return {};
 }
 
 export interface UsageSummary {

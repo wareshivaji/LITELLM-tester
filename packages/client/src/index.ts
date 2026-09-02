@@ -37,6 +37,7 @@ export { extractModels, TokenShieldClient } from './client.js';
 export { runPreflight } from './preflight.js';
 export type { PreflightOptions } from './preflight.js';
 export {
+  INSTRUMENTS,
   isStreamable,
   readOutput,
   readUsage,

@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import { toCurl } from '@tokenshield/client';
 import type { Exchange } from '@tokenshield/client';
 
+import { unknownFieldsIn } from '@tokenshield/client';
+
 import { Json } from './ui';
 
 /**
@@ -124,6 +126,26 @@ export function ExchangeDetail({ exchange }: { exchange: Exchange }) {
           Request — {exchange.request.method} {exchange.request.url}
         </SectionLabel>
         <HeaderTable headers={exchange.request.headers} highlight={false} />
+        {/*
+          What was sent that this surface's contract does not list. On a
+          recorded exchange this is the durable answer to "did we send a field
+          the endpoint never accepted" — which is the first question when a
+          result looks wrong and nothing errored.
+        */}
+        {(() => {
+          const stray = unknownFieldsIn(exchange.surface, exchange.request.body);
+          return stray.length > 0 ? (
+            <p className="mt-2 text-[11px] leading-relaxed text-amber-300/80">
+              Sent {stray.length} field{stray.length === 1 ? '' : 's'} outside the{' '}
+              <code className="mono">{exchange.surface}</code> contract:{' '}
+              {stray.map((f) => (
+                <code key={f} className="mono mr-1 rounded bg-amber-500/10 px-1">
+                  {f}
+                </code>
+              ))}
+            </p>
+          ) : null;
+        })()}
         {exchange.request.body !== undefined && (
           <div className="mt-2">
             <Json value={exchange.request.body} maxHeight={220} />
