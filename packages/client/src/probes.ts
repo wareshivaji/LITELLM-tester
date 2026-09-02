@@ -195,6 +195,69 @@ export const PROBES: readonly Probe[] = [
     appliesTo: CHAT_LIKE,
     apply: set('messages', []),
   },
+  // ── Responses ─────────────────────────────────────────────────────────────
+  // There were no Responses probes at all, which left half the tested scope
+  // unprobed. Every field below is checked against LiteLLM v1.100.0's
+  // `ResponsesAPIRequestParams` (see fields.ts) rather than guessed at.
+  {
+    id: 'responses-instructions',
+    label: 'instructions',
+    why: 'Responses has a FIRST-CLASS field for the system prompt, where chat uses a message with role "system". A gateway that ignores it silently drops a customer persona and every guardrail written into it.',
+    expectation: 'works',
+    landmine: false,
+    appliesTo: ['responses'],
+    apply: set('instructions', 'Answer with exactly one lowercase word.'),
+  },
+  {
+    id: 'responses-max-tokens-wrong-name',
+    label: 'max_tokens on Responses ⚠',
+    why: 'The chat name, sent to Responses, where the only cap is `max_output_tokens`. This is the single most likely porting mistake, and the expensive outcome is SILENT acceptance: nothing caps the answer and the whole thing is billed. A 400 here is the friendlier result.',
+    expectation: 'rejected',
+    landmine: false,
+    appliesTo: ['responses'],
+    apply: (body) => {
+      const next = clone(body);
+      delete next['max_output_tokens'];
+      next['max_tokens'] = 16;
+      return next;
+    },
+  },
+  {
+    id: 'responses-stop-dropped',
+    label: 'stop on Responses ⚠',
+    why: '`stop` is absent from the Responses contract entirely — there is no equivalent. A ported chat request that relied on a stop sequence either gets a 400 (good, it is visible) or a 200 that generates straight past where it used to stop (bad, and invisible).',
+    expectation: 'rejected',
+    landmine: false,
+    appliesTo: ['responses'],
+    apply: set('stop', ['\n\n']),
+  },
+  {
+    id: 'responses-store-false',
+    label: 'store: false',
+    why: 'Asks the provider not to retain the response. Responses-only, and a real data-residency control — if the gateway drops it, a customer who believes nothing is stored is wrong.',
+    expectation: 'works',
+    landmine: false,
+    appliesTo: ['responses'],
+    apply: set('store', false),
+  },
+  {
+    id: 'responses-truncation-auto',
+    label: 'truncation: auto',
+    why: 'Server-side history trimming, with no chat equivalent. Worth knowing whether it is honoured before a customer relies on it instead of trimming client-side.',
+    expectation: 'works',
+    landmine: false,
+    appliesTo: ['responses'],
+    apply: set('truncation', 'auto'),
+  },
+  {
+    id: 'responses-unknown-param',
+    label: 'unknown parameter',
+    why: 'The Responses twin of the chat probe. Whether an unrecognised field is refused or ignored decides if a typo in a customer body is findable at all.',
+    expectation: 'unknown',
+    landmine: false,
+    appliesTo: ['responses'],
+    apply: set('definitely_not_a_real_field', true),
+  },
 ];
 
 /**
@@ -205,7 +268,14 @@ export const PROBES: readonly Probe[] = [
  * and it names OpenAI even on a Bedrock-only key. Not a probe because it needs
  * no body patch: just send the surface.
  */
-export const FLAT_ENVELOPE_SURFACE = 'moderations';
+/**
+ * The surface that produced a flat `{"error":"string"}` envelope.
+ *
+ * Was `moderations`, which is no longer in scope. The flat envelope is
+ * still reachable in scope — a guardrail block on chat completions returns
+ * one — so the guardrail probe is the way to see it now.
+ */
+export const FLAT_ENVELOPE_SURFACE = 'chat.completions';
 
 export function probesFor(surfaceId: string): Probe[] {
   return PROBES.filter((p) => p.appliesTo.length === 0 || p.appliesTo.includes(surfaceId));

@@ -34,6 +34,20 @@ const chatSample = (model: string, prompt: string): unknown => ({
   max_tokens: 128,
 });
 
+/**
+ * The surfaces under test.
+ *
+ * Narrowed 2026-09-02 to chat completions, responses and the MCP endpoints.
+ * The Anthropic surface, text completions, embeddings and moderations were
+ * removed: the gateway is not being held to those, so testing them produced
+ * findings nobody was going to act on.
+ *
+ * One thing was genuinely lost with `moderations`: it was the only endpoint
+ * that returned the FLAT `{"error":"string"}` envelope, which is the shape no
+ * OpenAI SDK can parse. The classifier still recognises that envelope — it also
+ * appears on guardrail blocks on chat completions, which IS in scope — so the
+ * detection is kept and only the endpoint is gone. See `classify.ts`.
+ */
 export const SURFACES: readonly SurfaceSpec[] = [
   {
     id: 'chat.completions',
@@ -56,60 +70,6 @@ export const SURFACES: readonly SurfaceSpec[] = [
     sample: (model, prompt) => ({ model, input: prompt, max_output_tokens: 128 }),
   },
   {
-    id: 'messages',
-    label: 'Messages (Anthropic)',
-    path: '/v1/messages',
-    method: 'POST',
-    family: 'anthropic',
-    needsModel: true,
-    docs: 'What Claude CLI, Claude Desktop and the Anthropic SDKs speak. Different error envelope.',
-    sample: (model, prompt) => ({
-      model,
-      max_tokens: 128,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  },
-  {
-    id: 'completions',
-    label: 'Text Completions',
-    path: '/v1/completions',
-    method: 'POST',
-    family: 'openai',
-    needsModel: true,
-    docs: 'The legacy prompt-in, text-out endpoint.',
-    sample: (model, prompt) => ({ model, prompt, max_tokens: 64 }),
-  },
-  {
-    id: 'embeddings',
-    label: 'Embeddings',
-    path: '/v1/embeddings',
-    method: 'POST',
-    family: 'openai',
-    needsModel: true,
-    docs: 'Needs an embedding model — a chat model here is expected to fail.',
-    sample: (model, prompt) => ({ model, input: prompt }),
-  },
-  {
-    id: 'messages.count_tokens',
-    label: 'Count Tokens (Anthropic)',
-    path: '/v1/messages/count_tokens',
-    method: 'POST',
-    family: 'anthropic',
-    needsModel: true,
-    docs: 'Token count without generating. No provider spend.',
-    sample: (model, prompt) => ({ model, messages: [{ role: 'user', content: prompt }] }),
-  },
-  {
-    id: 'tokens.count',
-    label: 'Count Tokens',
-    path: '/v1/tokens/count',
-    method: 'POST',
-    family: 'utility',
-    needsModel: true,
-    docs: 'Gateway-specific counter. Request shape is undocumented — probing it is the point.',
-    sample: chatSample,
-  },
-  {
     id: 'mcp.servers',
     label: 'MCP servers',
     path: '/v1/mcp/servers',
@@ -129,20 +89,36 @@ export const SURFACES: readonly SurfaceSpec[] = [
     docs: 'Streamable HTTP, JSON-RPC. What Cursor, Claude Desktop and the MCP SDKs speak.',
     sample: () => ({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
   },
+];
+
+/**
+ * Endpoints the lab CALLS but does not test.
+ *
+ * The scope is chat completions and responses (plus the MCP surface). The token
+ * counter is not in that scope and is not a tab — but it is kept because it is
+ * the only way to probe the `allowedModels` gate for FREE: it resolves and
+ * authorises a model without generating a single token. Deleting it to tidy the
+ * surface list would have made a working free test cost money, which is a bad
+ * trade for a shorter list.
+ *
+ * `surfaceById` resolves these too, so callers do not care which list a spec
+ * came from. They simply never appear in the UI.
+ */
+export const INSTRUMENTS: readonly SurfaceSpec[] = [
   {
-    id: 'moderations',
-    label: 'Moderations',
-    path: '/v1/moderations',
+    id: 'tokens.count',
+    label: 'Count Tokens',
+    path: '/v1/tokens/count',
     method: 'POST',
-    family: 'openai',
-    needsModel: false,
-    docs: 'Content classification endpoint.',
-    sample: (_model, prompt) => ({ input: prompt }),
-  },
+    family: 'utility',
+    needsModel: true,
+    docs: 'Gateway-specific counter. Request shape is undocumented — probing it is the point.',
+    sample: chatSample,
+  }
 ];
 
 export function surfaceById(id: string): SurfaceSpec | undefined {
-  return SURFACES.find((s) => s.id === id);
+  return SURFACES.find((s) => s.id === id) ?? INSTRUMENTS.find((s) => s.id === id);
 }
 
 /**

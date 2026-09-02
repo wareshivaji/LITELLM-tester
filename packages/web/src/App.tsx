@@ -38,7 +38,7 @@ const NAV: ReadonlyArray<{
   {
     section: 'Send',
     items: [
-      { id: 'playground', label: 'Playground', blurb: 'One request, eight surfaces', spends: true },
+      { id: 'playground', label: 'Playground', blurb: 'One request, any surface', spends: true },
       { id: 'streaming', label: 'Streaming', blurb: 'A response over time', spends: true },
       { id: 'prompts', label: 'Prompt lab', blurb: 'One prompt, both surfaces', spends: true },
       { id: 'sdk-compare', label: 'SDK compare', blurb: 'What a real SDK reports', spends: true },

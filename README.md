@@ -110,9 +110,8 @@ gateway's `X-Request-ID`.
 
 ## Phase 2 — Playground
 
-Send a real request to any of eight surfaces: chat completions, responses, Anthropic messages,
-text completions, embeddings, both token counters, moderations. The model picker is the key's own
-catalogue, and the **request body editor is the source of truth** — it is sent verbatim, with no
+Send a real request to any tested surface: chat completions, responses, and the two MCP endpoints.
+The model picker is the key's own catalogue, and the **request body editor is the source of truth** — it is sent verbatim, with no
 validation or correction, because a client that quietly fixes a malformed request cannot be used
 to find out how the gateway answers one.
 

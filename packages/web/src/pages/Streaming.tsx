@@ -208,7 +208,7 @@ export function Streaming(props: StreamingProps) {
             <p className="mt-3 text-[11px] text-zinc-600">
               {analysis.sawDone
                 ? 'Terminated with [DONE].'
-                : 'No [DONE] sentinel seen — expected for the Anthropic and Responses surfaces.'}
+                : 'No [DONE] sentinel seen — expected on the Responses surface, which terminates with response.completed instead.'}
             </p>
           </Card>
         )}

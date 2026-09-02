@@ -47,8 +47,11 @@ export function SdkCompare(props: SdkCompareProps) {
   const [outcomes, setOutcomes] = useState<SdkOutcome[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Keep the selection legal when the surface changes — the Anthropic SDK has
-  // no method for /v1/embeddings, and offering it would produce a confusing
+  // Keep the selection legal when the surface changes. The Anthropic SDK now
+  // has NO legal surface at all — /v1/messages left the tested scope — so this
+  // guard resolves it away rather than offering a mode that cannot run.
+  // Previously the reason was that the SDK had no method for /v1/embeddings, and
+  // offering it would produce a confusing
   // client-side error rather than a gateway finding.
   useEffect(() => {
     setSelected((current) => {

@@ -50,7 +50,13 @@ have.
 
 ## 2 · Playground
 
-**What it is for.** Sending one request to any of eight surfaces and seeing exactly what came back.
+**What it is for.** Sending one request to any tested surface and seeing exactly what came back.
+
+> **Scope narrowed 2026-09-02.** The tested surfaces are `/v1/chat/completions`, `/v1/responses`,
+> and the two MCP endpoints. The Anthropic surface, text completions, embeddings and moderations
+> were removed — the gateway is not being held to those, so findings there were not going to be
+> acted on. The token counter is still called as a free *instrument* for the allowedModels gate,
+> but it is no longer a tab.
 
 **Try this.**
 
@@ -62,8 +68,10 @@ have.
 3. Edit the **request body** directly. It is the source of truth and is sent verbatim — nothing
    validates or "corrects" it, which is the only way to find out how the gateway answers a malformed
    request. Break the JSON and **Send** disables itself with the parser error.
-4. Switch to *Moderations* and send. You get a `501` with a flat `{"error":"string"}` body — an
-   envelope no OpenAI SDK can parse.
+4. Apply the `guardrail trip` probe and send. A guardrail block comes back as a **400** carrying a
+   flat `{"error":"string"}` body — an envelope no OpenAI SDK can parse. This used to be shown on
+   Moderations, which returned a 501 in the same shape; that surface is out of scope now, but the
+   flat envelope is still reachable here, which is what matters.
 5. Press **copy as curl** on any exchange. The credential comes out as `$TOKENSHIELD_KEY`, never the
    real or masked value, so it is safe to paste into a ticket.
 

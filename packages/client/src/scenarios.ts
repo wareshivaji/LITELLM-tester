@@ -197,16 +197,6 @@ export const SUITES: readonly Suite[] = [
         expect: { status: 200, verdict: 'ok' },
       },
       {
-        id: 'moderations-flat-envelope',
-        title: 'Moderations → 501 with a flat, unparseable envelope',
-        why: 'LANDMINE-1. A flat {"error":"string"} body defeats every OpenAI SDK, and 501 is retryable so the SDK tries three times.',
-        surface: 'moderations',
-        body: () => ({ input: 'hello' }),
-        landmine: 'LM-1',
-        spends: false,
-        expect: { status: 501, envelope: 'flat' },
-      },
-      {
         id: 'unknown-param-ignored',
         title: 'Unrecognised parameter is ignored, not rejected',
         why: 'Forward compatibility: a client on a newer SDK must not be broken by a field the gateway has not heard of.',
@@ -244,29 +234,6 @@ export const SUITES: readonly Suite[] = [
         body: (ctx) => ({ model: ctx.model, input: 'Reply with exactly: pong', max_output_tokens: 32 }),
         spends: true,
         expect: { status: 200, verdict: 'ok', bodyPath: { 'output.0': true } },
-      },
-      {
-        id: 'messages-max-tokens',
-        title: 'Anthropic Messages rejects its own mandatory max_tokens',
-        why: 'max_tokens is required by the Anthropic API, and on a Bedrock Nova model the gateway forwards it unchanged and Bedrock refuses it.',
-        surface: 'messages',
-        body: (ctx) => ({
-          model: ctx.model,
-          max_tokens: 32,
-          messages: [{ role: 'user', content: 'Reply with exactly: pong' }],
-        }),
-        landmine: 'LM-MSG-MAXTOKENS',
-        spends: false,
-        expect: { status: 400, envelope: 'anthropic', contains: 'max_tokens' },
-      },
-      {
-        id: 'embeddings-basic',
-        title: 'Embeddings returns a vector',
-        why: 'A different response shape again, and it needs an embedding model rather than a chat one.',
-        surface: 'embeddings',
-        body: (ctx) => ({ model: ctx.embedModel, input: 'hello' }),
-        spends: true,
-        expect: { status: 200, verdict: 'ok', bodyPath: { 'data.0.embedding.0': true } },
       },
       {
         id: 'responses-shorthand-continuation',
@@ -356,15 +323,6 @@ export const SUITES: readonly Suite[] = [
         spends: true,
         expect: { status: 200, verdict: 'ok' },
       },
-      {
-        id: 'token-count',
-        title: 'Gateway token counter answers without generating',
-        why: 'Undocumented, and useful precisely because it costs nothing.',
-        surface: 'tokens.count',
-        body: (ctx) => chat(ctx),
-        spends: false,
-        expect: { status: 200, verdict: 'ok', bodyPath: { input_tokens: true } },
-      },
     ],
   },
   {
@@ -426,6 +384,9 @@ export const SUITES: readonly Suite[] = [
         id: 'model-denied',
         title: 'A model outside the key’s allowlist → 403, named',
         why: 'Must be distinguishable from "no such model", or an operator cannot tell a permission problem from a typo.',
+        // tokens.count is an INSTRUMENT, not a tested surface: it resolves and
+        // authorises a model without generating anything, so the gate can be
+        // exercised for free. See INSTRUMENTS in surfaces.ts.
         surface: 'tokens.count',
         body: () => ({ model: 'gpt-4o', messages: [{ role: 'user', content: 'x' }] }),
         spends: false,
@@ -435,6 +396,9 @@ export const SUITES: readonly Suite[] = [
         id: 'gate-applies-off-chat',
         title: 'The allowlist applies on non-generating surfaces too',
         why: 'A gate that only guards the expensive endpoint is not a gate.',
+        // tokens.count is an INSTRUMENT, not a tested surface: it resolves and
+        // authorises a model without generating anything, so the gate can be
+        // exercised for free. See INSTRUMENTS in surfaces.ts.
         surface: 'tokens.count',
         body: () => ({ model: 'claude-sonnet-4', messages: [{ role: 'user', content: 'x' }] }),
         spends: false,

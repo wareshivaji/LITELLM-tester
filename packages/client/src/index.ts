@@ -84,6 +84,17 @@ export {
 export type { ToolCall, ToolCallIssue, ToolPreset, ToolTurn } from './tools.js';
 export { extractResponsesToolCalls } from './tools.js';
 export {
+  CHAT_FIELDS,
+  FIELD_GAPS,
+  fieldsFor,
+  gapsMovingTo,
+  isUnknownField,
+  RESPONSES_FIELDS,
+  sharedFields,
+  unknownFieldsIn,
+} from './fields.js';
+export type { FieldGap } from './fields.js';
+export {
   checkMcpItems,
   offeredToolNames,
   readMcpBrokeredCalls,

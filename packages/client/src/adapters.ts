@@ -70,7 +70,17 @@ export const OPENAI_SDK_SURFACES = [
 // `messages.count_tokens` is absent from @anthropic-ai/sdk 0.32's typed
 // surface, so it stays raw-only rather than being reached through an untyped
 // escape hatch that would not represent what a customer writes.
-export const ANTHROPIC_SDK_SURFACES = ['messages'] as const;
+/**
+ * Surfaces the Anthropic SDK can be pointed at.
+ *
+ * Empty since 2026-09-02: `/v1/messages` left the tested scope, so there is
+ * nowhere for this adapter to run. The adapter itself is kept — it is the only
+ * thing that can show what `@anthropic-ai/sdk` extracts from an error, and the
+ * finding it produced (a 401 on /v1/messages answered in the OPENAI envelope,
+ * so the SDK reads no type and no code) is recorded in the ledger. Restoring
+ * the surface is the only thing needed to run it again.
+ */
+export const ANTHROPIC_SDK_SURFACES: readonly string[] = [];
 
 export function sdkModesFor(surfaceId: string): SdkMode[] {
   const modes: SdkMode[] = ['raw'];
