@@ -1008,7 +1008,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
       prompt: c.prompt,
       ...(c.system !== undefined ? { system: c.system } : {}),
       maxTokens: c.maxTokens,
-      useMcp: c.useMcp === true,
+      mcpMode: c.mcpMode ?? 'none',
       tools: c.tools ?? 'none',
       expect: c.expect,
     })),

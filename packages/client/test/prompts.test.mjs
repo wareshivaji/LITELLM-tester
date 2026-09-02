@@ -57,19 +57,59 @@ check('responses carries it flat', respTool.tools[0].name, 'get_weather');
 truthy('the chat shape has no top-level name', chatTool.tools[0].name === undefined);
 truthy('the responses shape has no function wrapper', respTool.tools[0].function === undefined);
 
-// The MCP block is the same on both, which is what LiteLLM documents.
-const mcpCase = PROMPT_CASES.find((c) => c.id === 'mcp-brokered');
-const chatMcp = buildPromptBody('chat.completions', mcpCase, opts);
-const respMcp = buildPromptBody('responses', mcpCase, opts);
-check('the MCP block is identical across surfaces', chatMcp.tools[0], respMcp.tools[0]);
-check('and points at the lab server', chatMcp.tools[0].server_url, opts.mcpServerUrl);
+// ── the two MCP modes ───────────────────────────────────────────────────────
+// `declared` sends a type:"mcp" block — the LiteLLM and OpenAI way, and the
+// same shape on both surfaces. `key-driven` sends NOTHING and lets the
+// gateway broker from the key's entitlement, which is what TokenShield does.
+// Getting these mixed up is how the mock-pointing cases came to test the strip
+// instead of the brokering.
+
+const declared = PROMPT_CASES.find((c) => c.mcpMode === 'declared');
+const chatMcp = buildPromptBody('chat.completions', declared, opts);
+const respMcp = buildPromptBody('responses', declared, opts);
+check('a declared MCP block is identical across surfaces', chatMcp.tools[0], respMcp.tools[0]);
+check('and points at the configured server', chatMcp.tools[0].server_url, opts.mcpServerUrl);
 check('with approval off so the gateway brokers it', chatMcp.tools[0].require_approval, 'never');
 
 check(
-  'an MCP case with no server url declares no MCP tool rather than a broken one',
-  buildPromptBody('chat.completions', mcpCase, { model: 'm' }).tools,
+  'a declared case with no server url declares no MCP tool rather than a broken one',
+  buildPromptBody('chat.completions', declared, { model: 'm' }).tools,
   undefined,
 );
+
+// The important one. A key-driven case must send no tools at all — adding a
+// block would test the gateway's strip rather than its brokering.
+const keyDriven = PROMPT_CASES.find((c) => c.id === 'mcp-key-driven');
+check(
+  'a key-driven case declares NO tools, even with a server url available',
+  buildPromptBody('responses', keyDriven, opts).tools,
+  undefined,
+);
+check(
+  'and none on chat either',
+  buildPromptBody('chat.completions', keyDriven, opts).tools,
+  undefined,
+);
+
+// A key-driven case that also declares a client tool must carry ONLY that one.
+const mixed = PROMPT_CASES.find((c) => c.id === 'mcp-and-client-tools');
+const mixedBody = buildPromptBody('chat.completions', mixed, opts);
+check('a mixed case carries exactly one tool', mixedBody.tools.length, 1);
+check('and it is the client tool, not an MCP block', mixedBody.tools[0].function.name, 'get_weather');
+
+truthy(
+  'every MCP case that targets a real org is key-driven',
+  PROMPT_CASES.filter((c) => c.id.startsWith('mcp-') && c.id !== 'mcp-declared-block-stripped').every(
+    (c) => c.mcpMode === 'key-driven',
+  ),
+);
+
+// Array expectations, added so one case can prove BOTH blocked tools at once.
+const blockCase = PROMPT_CASES.find((c) => c.id === 'mcp-block-is-provable');
+check('a block case names both blocked tools', blockCase.expect.withholdsTool, [
+  'hf_fs',
+  'microsoft_docs_fetch',
+]);
 
 // ── reading the answer back out ─────────────────────────────────────────────
 

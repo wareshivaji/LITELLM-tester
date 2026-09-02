@@ -235,4 +235,60 @@ check(
   [],
 );
 
+// ── array expectations (Phase 5) ─────────────────────────────────────────────
+// One case proves BOTH blocked tools, which is how the real org is shaped: two
+// BLOCKs across two different servers.
+
+check(
+  'several withheld tools are all checked, and a clean listing passes',
+  evaluatePromptOutcome(
+    'responses',
+    { ...brokered, expect: { withholdsTool: ['hf_fs', 'microsoft_docs_fetch'] } },
+    exchange(real),
+  ).ok,
+  true,
+);
+
+check(
+  'only the leaked one is named, not every tool asked about',
+  evaluatePromptOutcome(
+    'responses',
+    { ...brokered, expect: { withholdsTool: ['hf_fs', 'hub_repo_search'] } },
+    exchange(real),
+  ).failures,
+  ['expected "hub_repo_search" to be withheld, but it was offered'],
+);
+
+check(
+  'several offered tools are all required',
+  evaluatePromptOutcome(
+    'responses',
+    { ...brokered, expect: { offersTool: ['hub_repo_search', 'microsoft_docs_search'] } },
+    exchange(real),
+  ).ok,
+  true,
+);
+
+check(
+  'and a missing one is named while the present ones are not',
+  evaluatePromptOutcome(
+    'responses',
+    { ...brokered, expect: { offersTool: ['hub_repo_search', 'not_a_tool'] } },
+    exchange(real),
+  ).failures[0]
+    .startsWith('expected "not_a_tool" to be offered'),
+  true,
+);
+
+// The guard still holds for a list: no listing means UNPROVEN, not proven.
+check(
+  'with no listing, a list of withheld tools reports cannot-tell for all of them',
+  evaluatePromptOutcome(
+    'responses',
+    { ...brokered, expect: { withholdsTool: ['hf_fs', 'microsoft_docs_fetch'] } },
+    exchange({ output: [{ type: 'message', content: [{ text: 'hi' }] }] }),
+  ).failures,
+  ['cannot tell whether "hf_fs", "microsoft_docs_fetch" were withheld: no mcp_list_tools item was emitted'],
+);
+
 done();

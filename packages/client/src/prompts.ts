@@ -71,10 +71,17 @@ export interface PromptExpectation {
    * that cannot tell those apart is not testing brokering.
    */
   brokersTool?: string;
-  /** The named tool must appear in the offered list (`mcp_list_tools`). */
-  offersTool?: string;
-  /** The named tool must NOT be offered — how a BLOCK policy is proved. */
-  withholdsTool?: string;
+  /** These tools must appear in the offered list (`mcp_list_tools`). */
+  offersTool?: string | string[];
+  /**
+   * These tools must NOT be offered — the only way a BLOCK policy is proved.
+   *
+   * Not by asking the model and reading the prose: a blocked tool is withheld
+   * entirely, so the model answers around the gap with an allowed tool or from
+   * its own knowledge, and a plausible answer is indistinguishable from a
+   * working block. The offered list is the evidence.
+   */
+  withholdsTool?: string | string[];
   /** The answer must be non-empty after trimming. */
   nonEmpty?: boolean;
   /**
@@ -99,8 +106,23 @@ export interface PromptCase {
   expect: PromptExpectation;
   /** Cap per surface. Small on purpose. */
   maxTokens: number;
-  /** Declare the lab's own MCP server as a tool on this request. */
-  useMcp?: boolean;
+  /**
+   * How MCP reaches this request.
+   *
+   *  - `key-driven` — send NO tool block and let the gateway broker from the
+   *    key's own entitlement. This is what TokenShield actually does, and it is
+   *    the mode that works against a real org: the gateway strips any
+   *    `type:"mcp"` block a client sends and honours it only as a filter that
+   *    can narrow what the key already permits. Verified against a live org on
+   *    2026-09-01 — seven responses all carried `mcp_list_tools` and `mcp_call`
+   *    with nothing declared by the caller.
+   *  - `declared` — send a `type:"mcp"` block, which is the LiteLLM and OpenAI
+   *    way. Against TokenShield this tests the STRIP, not the brokering: a
+   *    block naming a server the key cannot reach is a 400 rather than a silent
+   *    no-op.
+   *  - omitted — no MCP at all.
+   */
+  mcpMode?: 'key-driven' | 'declared';
   /** Declare these client-side function tools. */
   tools?: 'weather' | 'none';
 }
@@ -195,24 +217,79 @@ export const PROMPT_CASES: readonly PromptCase[] = [
     maxTokens: 32,
     tools: 'weather',
   },
+  // ── MCP against a real org ────────────────────────────────────────────────
+  // These need a key with MCP entitlement — no tool block is sent, because on
+  // TokenShield the KEY is the trigger. The tool names below are from the org
+  // used for verification on 2026-09-01; change them for another org.
   {
-    id: 'mcp-brokered',
-    title: 'An MCP tool actually runs',
-    why: "Points at the lab's own MCP server. Its answer is deliberately absurd — no model could invent it — so if the phrase comes back, the gateway genuinely brokered the call rather than hallucinating an answer.",
-    prompt: 'Use the lab_weather tool to check the weather in Paris, then tell me exactly what it said.',
-    expect: { mentions: ['raining upward'], nonEmpty: true },
+    id: 'mcp-key-driven',
+    title: 'The gateway brokers from the key, with nothing declared',
+    why: 'Sends no MCP tool block at all. If a tool still runs, brokering is driven entirely by the key\'s entitlement — which is TokenShield\'s model and the opposite of LiteLLM, where the caller must opt in per request. Also the cheapest proof that mcp_list_tools and mcp_call reach the client.',
+    prompt: 'Search Hugging Face for models matching "distilbert". List just the top 3 names.',
+    expect: {
+      nonEmpty: true,
+      brokersTool: 'hub_repo_search',
+      offersTool: ['hub_repo_search', 'microsoft_docs_search'],
+    },
     maxTokens: 160,
-    useMcp: true,
+    mcpMode: 'key-driven',
+    tools: 'none',
+  },
+  {
+    id: 'mcp-block-is-provable',
+    title: 'A blocked tool is absent from the offered list',
+    why: 'The case that cannot be tested by reading the answer. A blocked tool is WITHHELD, so the model answers with an allowed tool or from memory and the prose looks fine either way — a plausible answer is indistinguishable from a working block. This asserts on the offered list instead, which is the only actual evidence. Both blocked tools are checked at once, and an absent listing reports "cannot tell" rather than passing.',
+    prompt: 'Fetch the full page content of the Microsoft Learn article on Durable Functions, and list the files in the HuggingFace repo bert-base-uncased.',
+    expect: {
+      nonEmpty: true,
+      withholdsTool: ['hf_fs', 'microsoft_docs_fetch'],
+      offersTool: ['microsoft_docs_search', 'hub_repo_search'],
+    },
+    maxTokens: 200,
+    mcpMode: 'key-driven',
+    tools: 'none',
+  },
+  {
+    id: 'mcp-out-of-scope-server',
+    title: 'A server the key was never granted is not reachable',
+    why: 'Context7 is not in this key\'s serverIds, so none of its tools should appear. Distinct from a BLOCK: a blocked tool stays in the routing index and refuses as policy_block, while a tool from an ungranted server was never indexed and refuses as unknown_tool. Getting those two the wrong way round sends an engineer looking in entirely the wrong place.',
+    prompt: 'Use Context7 to look up React useEffect documentation.',
+    expect: {
+      nonEmpty: true,
+      withholdsTool: ['get_library_docs', 'resolve_library_id'],
+    },
+    maxTokens: 160,
+    mcpMode: 'key-driven',
+    tools: 'none',
+  },
+  {
+    id: 'mcp-cross-server',
+    title: 'Two servers in one request',
+    why: 'One prompt needing Hugging Face and Cloudflare. Proves the aggregated list spans servers and that a call routes back to the right one — the reason wire names are namespaced at all. Watch server_label on each mcp_call: if both come back the same, attribution is broken.',
+    prompt: 'Search Hugging Face for "distilbert" models, then search the Cloudflare docs for "Workers KV write limits". One sentence on each.',
+    expect: { nonEmpty: true, offersTool: ['hub_repo_search', 'search_cloudflare_documentation'] },
+    maxTokens: 240,
+    mcpMode: 'key-driven',
+    tools: 'none',
+  },
+  {
+    id: 'mcp-declared-block-stripped',
+    title: 'A declared type:"mcp" block naming an unreachable server',
+    why: 'The LiteLLM and OpenAI way of asking for MCP, pointed at the lab\'s own server, which is NOT a registered org server. TokenShield strips the block unconditionally and then honours it only as a filter that can narrow what the key permits — so naming something unreachable should be a 400 rather than a silent no-op. A 200 here would mean the block was quietly ignored, which is the worse outcome: a client believes it scoped the request and it did not.',
+    prompt: 'Use the lab tool to check the weather in Paris.',
+    expect: { nonEmpty: true },
+    maxTokens: 120,
+    mcpMode: 'declared',
     tools: 'none',
   },
   {
     id: 'mcp-and-client-tools',
-    title: 'MCP and a client tool in one request',
-    why: 'The mixed case, prod-confirmed to deadlock. The gateway must broker its own tool and hand back the client one; swallowing either is a hang or a wrong answer.',
-    prompt: 'Check the weather in Paris using whichever tool is appropriate.',
+    title: 'A client tool alongside the gateway\'s own',
+    why: 'The mixed case, prod-confirmed to deadlock. The gateway must broker its own tool and hand the client one back; swallowing either is a hang or a wrong answer. No MCP block is declared — the entitlement supplies the gateway side.',
+    prompt: 'What is the weather in Paris? Also search Hugging Face for "distilbert".',
     expect: { nonEmpty: true },
-    maxTokens: 160,
-    useMcp: true,
+    maxTokens: 200,
+    mcpMode: 'key-driven',
     tools: 'weather',
   },
 ];
@@ -220,7 +297,14 @@ export const PROMPT_CASES: readonly PromptCase[] = [
 /** Options for building a request body from a case. */
 export interface BuildOptions {
   model: string;
-  /** Where the lab's own MCP server is, for cases with `useMcp`. */
+  /**
+   * The `server_url` for a `declared` case.
+   *
+   * Defaults to the lab's own MCP server. Note that against TokenShield the
+   * lab's server is not a registered org server, so a declared block naming it
+   * matches nothing reachable — which is the 400 that case is checking for, not
+   * a misconfiguration.
+   */
   mcpServerUrl?: string;
   /** Force streaming. */
   stream?: boolean;
@@ -242,7 +326,9 @@ export function buildPromptBody(
   if (promptCase.tools === 'weather') {
     tools.push(surface === 'responses' ? WEATHER_TOOL_RESPONSES : WEATHER_TOOL_CHAT);
   }
-  if (promptCase.useMcp === true && opts.mcpServerUrl !== undefined) {
+  // `key-driven` deliberately declares NOTHING: the entitlement on the key is
+  // the trigger, and adding a block here would test the strip instead.
+  if (promptCase.mcpMode === 'declared' && opts.mcpServerUrl !== undefined) {
     tools.push(mcpToolBlock(opts.mcpServerUrl));
   }
 
@@ -305,6 +391,10 @@ export interface PromptOutcome {
   failures: string[];
   ok: boolean;
   totalMs: number;
+}
+
+function asList(v: string | string[]): string[] {
+  return Array.isArray(v) ? v : [v];
 }
 
 /** Read the answer text out of whichever surface produced it. */
@@ -404,23 +494,33 @@ export function evaluatePromptOutcome(
       const got = brokeredCalls.length > 0 ? brokeredCalls.map((c) => c.name).join(', ') : 'none';
       failures.push(`expected the gateway to run "${e.brokersTool}", it ran ${got}`);
     }
-    if (e.offersTool !== undefined && !offeredTools.includes(e.offersTool)) {
+    const wantOffered = e.offersTool === undefined ? [] : asList(e.offersTool);
+    const notOffered = wantOffered.filter((t) => !offeredTools.includes(t));
+    if (notOffered.length > 0) {
       failures.push(
         offeredTools.length === 0
-          ? `expected "${e.offersTool}" to be offered, but no mcp_list_tools item was emitted at all`
-          : `expected "${e.offersTool}" to be offered, offered: ${offeredTools.join(', ')}`,
+          ? `expected ${notOffered.map((t) => `"${t}"`).join(', ')} to be offered, but no mcp_list_tools item was emitted at all`
+          : `expected ${notOffered.map((t) => `"${t}"`).join(', ')} to be offered; offered: ${offeredTools.join(', ')}`,
       );
     }
     // A withheld tool must be absent from a listing that EXISTS. With no
     // listing there is nothing to be absent from, and calling that a pass would
     // report "blocked" on any response that simply never listed anything.
     if (e.withholdsTool !== undefined) {
+      const wantWithheld = asList(e.withholdsTool);
       if (offeredTools.length === 0) {
         failures.push(
-          `cannot tell whether "${e.withholdsTool}" was withheld: no mcp_list_tools item was emitted`,
+          `cannot tell whether ${wantWithheld.map((t) => `"${t}"`).join(', ')} ` +
+            `${wantWithheld.length === 1 ? 'was' : 'were'} withheld: no mcp_list_tools item was emitted`,
         );
-      } else if (offeredTools.includes(e.withholdsTool)) {
-        failures.push(`expected "${e.withholdsTool}" to be withheld, but it was offered`);
+      } else {
+        const leaked = wantWithheld.filter((t) => offeredTools.includes(t));
+        if (leaked.length > 0) {
+          failures.push(
+            `expected ${leaked.map((t) => `"${t}"`).join(', ')} to be withheld, but ` +
+              `${leaked.length === 1 ? 'it was' : 'they were'} offered`,
+          );
+        }
       }
     }
   }
