@@ -311,4 +311,61 @@ check(
   true,
 );
 
+// ── refusedWith (Phase 6) ───────────────────────────────────────────────────
+// Added because `mcp-declared-block-stripped` returned 403 where the
+// walkthrough documents 400. The refusal was the correct OUTCOME; expecting a
+// 200 was simply wrong.
+
+const refusalCase = {
+  id: 'r', title: 'R', why: '', prompt: 'p', maxTokens: 16,
+  expect: { refusedWith: [400, 403] },
+};
+
+check(
+  'a refusal with an accepted status passes',
+  evaluatePromptOutcome('responses', refusalCase, exchange({ status: 403, body: {} })).ok,
+  true,
+);
+check(
+  'the other accepted status passes too',
+  evaluatePromptOutcome('responses', refusalCase, exchange({ status: 400, body: {} })).ok,
+  true,
+);
+check(
+  'a 200 FAILS a refusal case, and says why that is the worse outcome',
+  evaluatePromptOutcome('responses', refusalCase, exchange({ status: 200, body: {} })).failures[0]
+    .includes('the worse outcome'),
+  true,
+);
+check(
+  'an unexpected refusal status is named',
+  evaluatePromptOutcome('responses', refusalCase, exchange({ status: 500, body: {} })).failures,
+  ['expected a refusal (400 or 403), got HTTP 500'],
+);
+check(
+  'a transport error still beats the refusal check',
+  evaluatePromptOutcome('responses', refusalCase, exchange({ transportError: 'ECONNREFUSED' }))
+    .failures[0]
+    .startsWith('transport:'),
+  true,
+);
+
+// Content checks must NOT run against a refusal body — reporting the same
+// defect several times over buries the one that matters.
+check(
+  'a refusal case runs no content checks',
+  evaluatePromptOutcome(
+    'responses',
+    { ...refusalCase, expect: { refusedWith: [403], mentions: ['never appears'], nonEmpty: true } },
+    exchange({ status: 403, body: {} }),
+  ).failures,
+  [],
+);
+
+check(
+  'the declared-block case now expects a refusal, not a 200',
+  PROMPT_CASES.find((c) => c.id === 'mcp-declared-block-stripped').expect.refusedWith,
+  [400, 403],
+);
+
 done();

@@ -295,6 +295,84 @@ report, or look for `[... truncated by the gateway]` in the `mcp_call` output.
 
 ---
 
+## 5d. Full prompt sweep, Prod US, 2026-09-02
+
+All 11 cases, both surfaces, `bedrock-claude-haiku-4.5`. **5 clean, 4 findings, 2 already covered
+in 5c.** The five clean ones — plain answer, system instruction, JSON output, a client tool offered
+back, a tool available but not forced — agreed across both surfaces every time. That baseline is
+what makes the rest interpretable.
+
+### A. The gateway hands its own MCP tool back to the client, under the wire name
+
+The mixed-ownership case declared **one** client tool, `get_weather`. The client got back **two**:
+
+```
+client tool calls = ['get_weather', 'huggingface__hub_repo_search']
+```
+
+`huggingface__hub_repo_search` is the **wire name** of a tool the gateway brokers. The client never
+declared it and has no implementation for it.
+
+Handing the whole turn back is documented and deliberate (walkthrough §2.5: *"the whole turn is
+handed back rather than half-executed"*) and the gateway tool correctly did **not** run. The problem
+is the consequence: a conforming OpenAI client reads `tool_calls`, must execute each one, and cannot
+execute this. It either invents a result, drops the call and breaks the conversation, or stops. This
+is the prod-confirmed mixed-turn deadlock, seen from the client side.
+
+**It also corrects an earlier claim of mine.** I wrote on 2026-09-01 that the wire name appears in
+no client-visible artifact and no API response — only in the model's own call. It appears here, in a
+handed-back `tool_calls` entry. And the separator is confirmed as `__`, diverging from LiteLLM's
+env-configurable `-`.
+
+### B. `/v1/chat/completions` brokers tools and reports nothing at all
+
+The cross-server case on chat: **200, 10.5s, zero `mcp_call`, zero `mcp_list_tools`** — and an answer
+containing real Hugging Face data, including `hf.co` links no model invents. So the tools **ran**;
+the client simply has no record of it.
+
+The same request on Responses brokered both tools with correct distinct `server_label`s
+(`HuggingFace`, `Cloudflare docs`), confirming cross-server aggregation and per-call attribution.
+
+Appendix C.2 states transparency items are Responses-only, so this is documented rather than a
+surprise — but the live consequence is worth stating plainly: **on chat completions, brokered tool
+work is invisible.** Ten seconds of latency, real external calls, third-party data in the answer,
+and nothing in the response says a tool was involved. A customer cannot audit it, attribute it, or
+bill it back.
+
+### C. A prompt naming an unentitled server returns 502 on chat, 200 on Responses
+
+*"Use Context7 to look up React useEffect documentation"* — Context7 is not in this key's
+`serverIds`.
+
+| Surface | Result |
+|---|---|
+| chat completions | **502** after 5.4s |
+| responses | **200**, model replies that it has no such tool |
+
+A 502 is not a legitimate answer to that prompt, and the Responses path proves it: same key, same
+prompt, correct graceful reply. Reproducible from `mcp-out-of-scope-server`.
+
+Also confirmed here: **no `mcp_list_tools` was emitted on the 200**, because no tool ran. So the
+listing really is conditional on execution, and the lab's `withholdsTool` correctly reported *cannot
+tell* rather than passing — the guard doing its job on live data.
+
+### D. A declared `type:"mcp"` block is refused with 403, not the documented 400
+
+Both surfaces returned **403**, in 267ms on Responses — fast enough to be pre-provider. The
+walkthrough says *"a block naming nothing reachable is a 400 rather than a silent no-op."* The code
+says 403.
+
+The outcome that matters is right: it is **refused**, not silently dropped. A 200 would be far worse,
+leaving a client believing it had scoped a request when the block was discarded. But 400 and 403
+mean different things to a client — one says "your request is malformed", the other "you may not do
+this" — and only one of them is documented.
+
+The lab expectation was wrong here, not the gateway. Fixed with a `refusedWith: [400, 403]` marker
+that checks the status and skips content checks entirely, since running them against a refusal body
+reports the same defect several times and buries the real one.
+
+---
+
 ## 6. Local-run notes
 
 - Gateway autoloads `.env` **at startup only** (godotenv). Add vars before starting.

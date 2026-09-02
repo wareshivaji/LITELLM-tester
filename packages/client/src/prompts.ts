@@ -82,6 +82,15 @@ export interface PromptExpectation {
    * working block. The offered list is the evidence.
    */
   withholdsTool?: string | string[];
+  /**
+   * The call is EXPECTED to be refused, with any of these statuses.
+   *
+   * Without this every content check runs against a 200, so a legitimate
+   * refusal reads as a failure. Added after `mcp-declared-block-stripped`
+   * returned 403 where the walkthrough documents 400 — the refusal was the
+   * right OUTCOME and expecting a 200 was simply wrong.
+   */
+  refusedWith?: number[];
   /** The answer must be non-empty after trimming. */
   nonEmpty?: boolean;
   /**
@@ -277,7 +286,12 @@ export const PROMPT_CASES: readonly PromptCase[] = [
     title: 'A declared type:"mcp" block naming an unreachable server',
     why: 'The LiteLLM and OpenAI way of asking for MCP, pointed at the lab\'s own server, which is NOT a registered org server. TokenShield strips the block unconditionally and then honours it only as a filter that can narrow what the key permits — so naming something unreachable should be a 400 rather than a silent no-op. A 200 here would mean the block was quietly ignored, which is the worse outcome: a client believes it scoped the request and it did not.',
     prompt: 'Use the lab tool to check the weather in Paris.',
-    expect: { nonEmpty: true },
+    // MEASURED 2026-09-02: 403 on both surfaces, 267ms on Responses — fast
+    // enough to be pre-provider. The walkthrough documents 400 for this case,
+    // so code and doc differ; either way it is REFUSED rather than silently
+    // ignored, which is the outcome that matters. A 200 would mean the block
+    // was dropped while the client believes it scoped the request.
+    expect: { refusedWith: [400, 403] },
     maxTokens: 120,
     mcpMode: 'declared',
     tools: 'none',
@@ -287,7 +301,15 @@ export const PROMPT_CASES: readonly PromptCase[] = [
     title: 'A client tool alongside the gateway\'s own',
     why: 'The mixed case, prod-confirmed to deadlock. The gateway must broker its own tool and hand the client one back; swallowing either is a hang or a wrong answer. No MCP block is declared — the entitlement supplies the gateway side.',
     prompt: 'What is the weather in Paris? Also search Hugging Face for "distilbert".',
-    expect: { nonEmpty: true },
+    // MEASURED 2026-09-02, and the expectation was far too weak before — this
+    // case PASSED on `nonEmpty` while revealing the finding. The client got
+    // back two tool calls: its own `get_weather`, and
+    // `huggingface__hub_repo_search`, which it never declared and cannot run.
+    // So the gateway hands its own brokered tool back to the caller under the
+    // WIRE name. Handing the whole turn back is documented and deliberate;
+    // handing back a call for a tool the client does not have leaves it with
+    // nothing sensible to do.
+    expect: { nonEmpty: true, callsTool: 'get_weather' },
     maxTokens: 200,
     mcpMode: 'key-driven',
     tools: 'weather',
@@ -455,8 +477,21 @@ export function evaluatePromptOutcome(
   const mcpIssues = checkMcpItems(body);
   const failures: string[] = [];
 
+  const expectRefusal = promptCase.expect.refusedWith;
   if (exchange.transportError !== undefined) {
     failures.push(`transport: ${exchange.transportError}`);
+  } else if (expectRefusal !== undefined) {
+    // A case expecting a refusal is checked on the STATUS and nothing else.
+    // Running content checks against a refusal body reports the same defect
+    // several times over and buries the one that matters.
+    if (status === null || !expectRefusal.includes(status)) {
+      failures.push(
+        `expected a refusal (${expectRefusal.join(' or ')}), got HTTP ${status ?? '—'}` +
+          (status === 200
+            ? ' — a 200 means the request was accepted, which is the worse outcome'
+            : ''),
+      );
+    }
   } else if (status !== 200) {
     failures.push(`HTTP ${status ?? '—'}, expected 200`);
   } else {
