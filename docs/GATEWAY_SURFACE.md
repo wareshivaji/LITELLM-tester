@@ -246,6 +246,55 @@ the keys available here.
 
 ---
 
+## 5c. Live run, Prod US, 2026-09-02
+
+Two prompt cases, `/v1/responses`, `bedrock-claude-haiku-4.5`, key
+`Prod level tool blocking` (org `69d35779ed0a3a6c61c8719a`). Both passed.
+
+**Key-driven brokering is confirmed.** Neither request carried a `tools` field — verified by dry run
+before sending. The gateway still offered 7 tools and ran them. So entitlement on the key is the
+whole trigger, and a client cannot opt out of governance, only out of tools. The inverse of LiteLLM,
+where a caller who omits the MCP block gets no tools and no governance either.
+
+**A BLOCK is now provable.** The offered list came back as exactly:
+
+```
+hf_whoami, hub_repo_details, hub_repo_search, microsoft_code_sample_search,
+microsoft_docs_search, migrate_pages_to_workers_guide, search_cloudflare_documentation
+```
+
+Seven of the key's nine policied tools. **`hf_fs` and `microsoft_docs_fetch` are absent** — the two
+`BLOCK` entries, withheld rather than refused. Asked for both blocked capabilities directly, the
+model degraded exactly as predicted: it ran `microsoft_docs_search` instead of `microsoft_docs_fetch`
+and `hub_repo_details` instead of `hf_fs`, and wrote a plausible answer around the gap. Reading that
+prose tells you nothing; the offered list is the evidence.
+
+**Cross-server attribution works, even though the listing label does not.** One request brokered two
+tools on two servers, and each `mcp_call` carried the correct distinct `server_label` — `MS Learn`
+and `HuggingFace`. So per-call attribution is sound; it is only `mcp_list_tools.server_label` that
+comma-joins every server into one unusable string.
+
+### NEW: tool output truncates at ~4,032 characters, not the documented 120,000
+
+`microsoft_docs_search` output was cut at **4,032 characters** with the gateway's own marker. The
+walkthrough (§5.4) documents the cap as **120,000** — so it truncates at about **3.4%** of the
+stated limit, a 30× discrepancy, and the **model** saw the truncated result.
+
+The number points at a cause. Walkthrough §2.7 says the *chat* SSE path truncates a tool preview at
+**4,000** characters. 4,032 is that number plus a marker, on the **Responses** path, where the
+preview truncation should not apply at all. So the likely fault is the chat preview cap leaking into
+the Responses transparency item — and worse, being applied to the copy the model is fed rather than
+only to the copy the client is shown.
+
+Impact is direct: a docs-search tool returns 10 chunks of up to 500 tokens each by its own
+description, and the model is answering from roughly the first eighth of that. Every answer built on
+a long tool result is quietly degraded.
+
+Reproduce: `mcp-block-is-provable` on `/v1/responses`, then read `output_truncated` in the run
+report, or look for `[... truncated by the gateway]` in the `mcp_call` output.
+
+---
+
 ## 6. Local-run notes
 
 - Gateway autoloads `.env` **at startup only** (godotenv). Add vars before starting.
