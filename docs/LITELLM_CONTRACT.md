@@ -219,6 +219,65 @@ visibly wrong.
 | Does per-key tool blocking exist in LiteLLM | **From source — YES**, correcting my earlier claim |
 | Envelope for a **failing** tool or unreachable server | Still open. Not documented, not yet read |
 
+## Mined from LiteLLM's test suite (Phase 4, 2026-09-02)
+
+Read `tests/mcp_tests/test_aresponses_api_with_mcp.py` (1,703 lines, 11 tests) and
+`tests/e2e/mcp/test_mcp_key_access_e2e.py`. Three checks came out of it that we did not have.
+
+### 1. The Responses lifecycle has a fixed order, and we were missing an event
+
+From `test_streaming_mcp_event_order_and_response_id_consistency`:
+
+```
+response.created -> response.in_progress -> response.output_item.added -> (MCP events) -> response.completed
+```
+
+**`response.in_progress` is required and we never looked for it.** We checked `created` and
+`completed` and had no idea the middle event existed. Also asserted there: `output_item.added` must
+precede `response.mcp_list_tools.in_progress`, because MCP events belong *inside* an output item
+rather than floating between them.
+
+Implemented as `checkResponsesLifecycle` in `stream.ts`, surfaced on the Streaming page.
+
+### 2. Duplicate tool names — a brokering bug by nature
+
+From `test_no_duplicate_mcp_tools_in_streaming_e2e`, whose docstring names the bug it guards:
+
+> *"Parent function (aresponses_api_with_mcp) processed MCP tools once. Streaming iterator processed
+> MCP tools again, causing duplicates."*
+
+Any gateway that assembles a tool list in more than one place can double it, and a duplicated name
+makes the model's choice ambiguous and unroutable back to one server. Now reported as
+`duplicate-tool-name` by `checkMcpItems`.
+
+### 3. Every offered tool needs name, description AND parameters
+
+LiteLLM asserts all three on each tool handed to the model. We already flagged a missing
+`input_schema`; **description was unchecked**. An empty description is how a model decides a tool
+does not apply, so it is near-unusable. Now `missing-description`.
+
+Finding one of our own test fixtures immediately: the `single-server label` case in
+`mcpItems.test.mjs` had a tool with no description and expected a clean result. The fixture was
+incomplete, not the check wrong.
+
+### Where we deliberately do NOT follow LiteLLM
+
+Their id test groups events into **cycles** and only requires the response id to be consistent
+*within* a cycle — because a two-round LiteLLM conversation emits **two** `response.created` and
+**two** `response.completed` with two different ids in one stream. That is not the shape a Responses
+stream is defined to have, and a client tracking one response id breaks on it.
+
+Our check asserts exactly one `created`, one `completed`, and one id throughout, which is what our
+broker reconciles to. The walkthrough's Appendix B.3 already names one-response-lifecycle as an axis
+where TokenShield is ahead. **Do not relax this to match LiteLLM.** A unit test pins the divergence
+so nobody "fixes" it by accident.
+
+### Not yet mined
+
+`test_mcp_allowed_tools_filtering`, `test_aresponses_api_with_mcp_passes_mcp_server_auth_headers_to_process_tools`
+(relevant to the credential-leak check), `test_mcp_output_elements_addition`, and the two
+`TestMcpKeyGrantByAlias` / `TestMcpKeyWithoutAccessIsDenied` e2e classes.
+
 ## What LiteLLM actually is, and where to mine it
 
 It is a **gateway**, not a testing tool — the same category as TokenShield, not the same category as

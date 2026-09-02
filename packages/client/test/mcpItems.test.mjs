@@ -111,11 +111,20 @@ truthy('the comma-joined server_label is reported', kinds.includes('server-label
 truthy('the missing input_schema is reported', kinds.includes('missing-input-schema'));
 truthy('the non-standard status is reported', kinds.includes('nonstandard-status'));
 
+// The fixture gained a description when the missing-description check landed
+// (Phase 4, from LiteLLM's assertion that every offered tool carries name,
+// description AND parameters). The old fixture was incomplete, not the check
+// wrong — a tool with no description is genuinely near-unusable to a model.
 check(
-  'a single-server label is NOT reported as a list',
+  'a single-server label with COMPLETE tools is reported clean',
   checkMcpItems({
     output: [
-      { type: 'mcp_list_tools', id: 'x', server_label: 'OnlyOne', tools: [{ name: 'a', input_schema: {} }] },
+      {
+        type: 'mcp_list_tools',
+        id: 'x',
+        server_label: 'OnlyOne',
+        tools: [{ name: 'a', description: 'Does a thing', input_schema: {} }],
+      },
     ],
   }).map((i) => i.kind),
   [],

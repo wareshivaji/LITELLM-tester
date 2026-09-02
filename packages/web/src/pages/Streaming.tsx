@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
   analyseStream,
+  checkResponsesLifecycle,
   gapMs,
   readStreamDelta,
   STREAMING_SURFACES,
@@ -95,6 +96,15 @@ export function Streaming(props: StreamingProps) {
   const chunks = exchange?.response?.chunks ?? live;
   const analysis = useMemo(
     () => analyseStream(composer.surface.id, chunks),
+    [composer.surface.id, chunks],
+  );
+
+  // Responses has a fixed lifecycle: created -> in_progress ->
+  // output_item.added -> (MCP events) -> completed, all sharing one response id.
+  // Mined from LiteLLM's own regression test; `response.in_progress` was the
+  // one we had never looked for. Only meaningful on this surface.
+  const lifecycle = useMemo(
+    () => (composer.surface.id === 'responses' ? checkResponsesLifecycle(chunks) : null),
     [composer.surface.id, chunks],
   );
 
@@ -211,6 +221,53 @@ export function Streaming(props: StreamingProps) {
                 : 'No [DONE] sentinel seen — expected on the Responses surface, which terminates with response.completed instead.'}
             </p>
           </Card>
+        )}
+
+        {lifecycle !== null && chunks.length > 0 && !lifecycle.ok && (
+          <Card
+            title="Lifecycle"
+            subtitle="The Responses event contract: fixed order, one response id"
+          >
+            <ul className="space-y-1.5 text-xs">
+              {lifecycle.missing.map((m: string) => (
+                <li
+                  key={m}
+                  className="flex gap-2 rounded-md border border-rose-900/50 bg-rose-950/15 px-2.5 py-1.5"
+                >
+                  <span className="mono shrink-0 text-rose-500/70">missing</span>
+                  <span className="text-rose-200/90">
+                    <code className="mono">{m}</code> never arrived
+                  </span>
+                </li>
+              ))}
+              {lifecycle.problems.map((p: string, i: number) => (
+                <li
+                  key={i}
+                  className="flex gap-2 rounded-md border border-amber-900/50 bg-amber-950/15 px-2.5 py-1.5"
+                >
+                  <span className="mono shrink-0 text-amber-500/70">order</span>
+                  <span className="text-amber-200/90">{p}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[10px] leading-relaxed text-zinc-600">
+              Events seen: {lifecycle.seen.length === 0 ? '—' : lifecycle.seen.join(' → ')}
+            </p>
+            <p className="mt-1 text-[10px] leading-relaxed text-zinc-600">
+              This check is deliberately <strong>stricter than LiteLLM&rsquo;s</strong>, which
+              tolerates several <code className="mono">response.created</code> /{' '}
+              <code className="mono">completed</code> pairs with different ids in one stream. That is
+              not the shape a Responses stream is defined to have, and a client tracking one response
+              id breaks on it.
+            </p>
+          </Card>
+        )}
+
+        {lifecycle !== null && chunks.length > 0 && lifecycle.ok && (
+          <p className="text-[11px] text-emerald-400/80">
+            Lifecycle conformant — {lifecycle.seen.length} event types, one response id (
+            <code className="mono">{lifecycle.responseIds[0] ?? '—'}</code>).
+          </p>
         )}
 
         {analysis.anomalies.length > 0 && (

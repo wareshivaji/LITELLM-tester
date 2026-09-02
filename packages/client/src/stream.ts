@@ -70,6 +70,139 @@ export interface StreamAnomaly {
   issue: string;
 }
 
+/**
+ * Required lifecycle events on a Responses stream, in the order they must
+ * appear, and the response-id rule.
+ *
+ * Taken from LiteLLM's own regression test
+ * `tests/mcp_tests/test_aresponses_api_with_mcp.py::test_streaming_mcp_event_order_and_response_id_consistency`
+ * (v1.100.0). Three things we were not checking at all:
+ *
+ *  1. `response.in_progress` is required. We looked for `created` and
+ *     `completed` and never noticed this one was missing.
+ *  2. The order is fixed: created → in_progress → output_item.added, and
+ *     `output_item.added` must precede `response.mcp_list_tools.in_progress`,
+ *     because MCP events belong INSIDE an output item rather than floating
+ *     between them.
+ *  3. Lifecycle events must agree on the response id.
+ *
+ * **On point 3 we deliberately diverge from LiteLLM, and we are stricter.**
+ * Their test groups events into "cycles" and only requires the id to be
+ * consistent WITHIN a cycle — because their two-round conversation emits two
+ * `response.created` and two `response.completed` with two different ids in one
+ * stream. That is not the shape a Responses stream is defined to have, and a
+ * client tracking one response id breaks on it. Our broker reconciles to a
+ * single id, so we assert exactly one `created`, one `completed`, and one id
+ * throughout. Do not relax this to match LiteLLM: the walkthrough's Appendix
+ * B.3 already names one-response-lifecycle as an axis where we are ahead.
+ */
+const RESPONSES_LIFECYCLE_ORDER = [
+  'response.created',
+  'response.in_progress',
+  'response.output_item.added',
+] as const;
+
+export interface LifecycleReport {
+  /** Present events, in the order first seen. */
+  seen: string[];
+  /** Required events that never arrived. */
+  missing: string[];
+  /** Ordering and id violations, in client terms. */
+  problems: string[];
+  /** Distinct response ids across lifecycle events. More than one is a defect. */
+  responseIds: string[];
+  createdCount: number;
+  completedCount: number;
+  ok: boolean;
+}
+
+/**
+ * Check a Responses stream's lifecycle. Returns a report rather than throwing:
+ * a stream that violates this is the finding, not an error in the reader.
+ */
+export function checkResponsesLifecycle(chunks: readonly StreamChunk[]): LifecycleReport {
+  const seen: string[] = [];
+  const firstIndex = new Map<string, number>();
+  const ids: string[] = [];
+  let createdCount = 0;
+  let completedCount = 0;
+
+  chunks.forEach((chunk, i) => {
+    const parsed = chunk.parsed;
+    if (!isRecord(parsed)) return;
+    const type = parsed['type'];
+    if (typeof type !== 'string') return;
+
+    if (!firstIndex.has(type)) {
+      firstIndex.set(type, i);
+      seen.push(type);
+    }
+    if (type === 'response.created') createdCount += 1;
+    if (type === 'response.completed') completedCount += 1;
+
+    // Only lifecycle events carry the response object whose id must agree.
+    if (type === 'response.created' || type === 'response.in_progress' || type === 'response.completed') {
+      const response = parsed['response'];
+      if (isRecord(response)) {
+        const id = response['id'];
+        if (typeof id === 'string' && id.length > 0 && !ids.includes(id)) ids.push(id);
+      }
+    }
+  });
+
+  const problems: string[] = [];
+  const missing = [...RESPONSES_LIFECYCLE_ORDER, 'response.completed'].filter(
+    (t) => !firstIndex.has(t),
+  );
+
+  // Order, checked only between events that are actually present — a missing
+  // event is already reported and should not also produce a bogus ordering
+  // complaint about itself.
+  for (let i = 0; i < RESPONSES_LIFECYCLE_ORDER.length - 1; i += 1) {
+    const a = RESPONSES_LIFECYCLE_ORDER[i]!;
+    const b = RESPONSES_LIFECYCLE_ORDER[i + 1]!;
+    const ai = firstIndex.get(a);
+    const bi = firstIndex.get(b);
+    if (ai !== undefined && bi !== undefined && ai > bi) {
+      problems.push(`${a} arrived after ${b}; the order is fixed`);
+    }
+  }
+
+  const itemAdded = firstIndex.get('response.output_item.added');
+  const mcpListing = firstIndex.get('response.mcp_list_tools.in_progress');
+  if (itemAdded !== undefined && mcpListing !== undefined && itemAdded > mcpListing) {
+    problems.push(
+      'response.mcp_list_tools.in_progress arrived before response.output_item.added — MCP events belong inside an output item',
+    );
+  }
+
+  if (createdCount > 1) {
+    problems.push(
+      `${String(createdCount)} response.created events in one stream; a Responses stream has exactly one`,
+    );
+  }
+  if (completedCount > 1) {
+    problems.push(
+      `${String(completedCount)} response.completed events in one stream; a Responses stream has exactly one`,
+    );
+  }
+  if (ids.length > 1) {
+    problems.push(
+      `${String(ids.length)} different response ids across lifecycle events (${ids.join(', ')}); a client tracking one id breaks on this`,
+    );
+  }
+
+  return {
+    seen,
+    missing,
+    problems,
+    responseIds: ids,
+    createdCount,
+    completedCount,
+    ok: missing.length === 0 && problems.length === 0,
+  };
+}
+
 export interface StreamAnalysis {
   text: string;
   /** Every frame, including comments and the [DONE] sentinel. */

@@ -51,7 +51,8 @@ export { FLAT_ENVELOPE_SURFACE, PROBES, probesFor } from './probes.js';
 export type { Probe, ProbeExpectation } from './probes.js';
 export { toCurl } from './curl.js';
 export { SSEParser } from './sse.js';
-export { analyseStream, gapMs, readStreamDelta } from './stream.js';
+export { analyseStream, checkResponsesLifecycle, gapMs, readStreamDelta } from './stream.js';
+export type { LifecycleReport } from './stream.js';
 export type { StreamAnalysis, StreamAnomaly } from './stream.js';
 export type { StreamRequest } from './transport.js';
 export {

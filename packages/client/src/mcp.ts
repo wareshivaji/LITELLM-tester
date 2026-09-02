@@ -370,6 +370,8 @@ export interface McpItemIssue {
   kind:
     | 'server-label-is-a-list'
     | 'missing-input-schema'
+    | 'missing-description'
+    | 'duplicate-tool-name'
     | 'nonstandard-status'
     | 'output-truncated'
     | 'listing-absent-though-tool-ran';
@@ -410,6 +412,40 @@ export function checkMcpItems(body: unknown): McpItemIssue[] {
           `input_schema, which OpenAI declares required: ${noSchema.slice(0, 4).join(', ')}` +
           `${noSchema.length > 4 ? ' and more' : ''}. The schemas do exist on /v1/mcp/tools, so a ` +
           `client rendering this listing cannot show argument shapes it could have been given.`,
+      });
+    }
+
+    // Duplicate names, from LiteLLM's own regression test
+    // `test_no_duplicate_mcp_tools_in_streaming_e2e`. They had exactly this
+    // bug: the parent handler processed MCP tools once and the streaming
+    // iterator processed them again, so the model was offered the same tool
+    // twice. It is a brokering bug by nature — anything that assembles a tool
+    // list from more than one place can double it — and a duplicated name makes
+    // the model's choice ambiguous and the routing index unresolvable.
+    const counts = new Map<string, number>();
+    for (const tool of listing.tools) counts.set(tool.name, (counts.get(tool.name) ?? 0) + 1);
+    const dupes = [...counts.entries()].filter(([, n]) => n > 1).map(([name]) => name);
+    if (dupes.length > 0) {
+      issues.push({
+        kind: 'duplicate-tool-name',
+        detail:
+          `The model was offered the same tool more than once: ${dupes.join(', ')}. ` +
+          `A duplicated name makes the model's choice ambiguous and cannot be routed back to one server.`,
+      });
+    }
+
+    // LiteLLM asserts name, description AND parameters on every tool handed to
+    // the model. We already flag a missing schema; description was unchecked.
+    const noDescription = listing.tools
+      .filter((t) => t.description === undefined || t.description.length === 0)
+      .map((t) => t.name);
+    if (noDescription.length > 0) {
+      issues.push({
+        kind: 'missing-description',
+        detail:
+          `${String(noDescription.length)} offered tools carry no description: ` +
+          `${noDescription.slice(0, 4).join(', ')}${noDescription.length > 4 ? ' and more' : ''}. ` +
+          `The description is how the model decides whether a tool applies, so an empty one makes the tool near-unusable.`,
       });
     }
 
