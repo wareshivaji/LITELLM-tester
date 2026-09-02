@@ -97,6 +97,10 @@ export {
 } from './fields.js';
 export type { FieldGap } from './fields.js';
 export {
+  buildMcpAuthHeader,
+  checkMcpAuthScoping,
+  groupMcpAuthHeaders,
+  parseMcpAuthHeader,
   checkMcpItems,
   offeredToolNames,
   readMcpBrokeredCalls,
@@ -109,6 +113,7 @@ export {
   tallyPolicies,
 } from './mcp.js';
 export type {
+  McpAuthHeader,
   McpBrokeredCall,
   McpItemIssue,
   McpListing,

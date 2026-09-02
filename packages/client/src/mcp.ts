@@ -489,6 +489,141 @@ export function checkMcpItems(body: unknown): McpItemIssue[] {
   return issues;
 }
 
+// ── Per-server MCP credentials ───────────────────────────────────────────────
+//
+// Mined from LiteLLM v1.100.0
+// `test_aresponses_api_with_mcp_passes_mcp_server_auth_headers_to_process_tools`.
+// A caller supplies a credential for ONE MCP server by name:
+//
+//     x-mcp-linear_config-authorization: Bearer linear-token
+//
+// which LiteLLM parses into a per-server map, title-casing the header:
+//
+//     { linear_config: { Authorization: 'Bearer linear-token' } }
+//
+// Two things follow, and both are testable.
+//
+// **The alias may not contain a hyphen.** The alias and the header name are
+// separated by the first `-` after the prefix, so an alias like `linear-config`
+// splits into alias `linear` and header `config-authorization`. LiteLLM's
+// example alias uses an underscore for exactly this reason, and it validates
+// separators out of server names elsewhere. A gateway that accepts a hyphenated
+// alias will silently route a credential to a server that does not exist.
+//
+// **Credentials are scoped per server.** Each alias gets its own map, so a
+// token meant for server A must never reach server B. That is the check the
+// lab's own MCP server exists to make: it records what arrived, and grouping it
+// by alias turns "did the wrong server get this token" into a lookup.
+
+/** One `x-mcp-{alias}-{header}` header, split. */
+export interface McpAuthHeader {
+  alias: string;
+  /** Title-cased, matching how LiteLLM presents it downstream. */
+  header: string;
+  /** True when the alias contained a hyphen, so this split is a guess. */
+  ambiguous: boolean;
+}
+
+const MCP_AUTH_PREFIX = 'x-mcp-';
+
+function titleCaseHeader(name: string): string {
+  return name
+    .split('-')
+    .map((part) => (part.length === 0 ? part : part[0]!.toUpperCase() + part.slice(1).toLowerCase()))
+    .join('-');
+}
+
+/**
+ * Split an `x-mcp-{alias}-{header}` header name.
+ *
+ * Returns undefined for anything that is not one — including the bare legacy
+ * `x-mcp-auth` and the scoping header `x-mcp-servers`, neither of which names a
+ * server. Getting those wrong would invent an alias called `auth`.
+ */
+export function parseMcpAuthHeader(name: string): McpAuthHeader | undefined {
+  const lower = name.toLowerCase();
+  if (!lower.startsWith(MCP_AUTH_PREFIX)) return undefined;
+
+  const rest = lower.slice(MCP_AUTH_PREFIX.length);
+  const cut = rest.indexOf('-');
+  // No separator means there is no header part, so no alias either.
+  if (cut <= 0 || cut === rest.length - 1) return undefined;
+
+  const alias = rest.slice(0, cut);
+  const header = rest.slice(cut + 1);
+
+  return {
+    alias,
+    header: titleCaseHeader(header),
+    // A hyphen in the remaining header part is normal (`content-type`), but it
+    // also means we cannot tell whether the alias itself was hyphenated and got
+    // split. Flagged rather than guessed at.
+    ambiguous: header.includes('-'),
+  };
+}
+
+/**
+ * Build the header name for one server's credential.
+ *
+ * Throws on a hyphenated alias rather than emitting a header that will be
+ * mis-parsed at the other end — a credential silently routed to a server that
+ * does not exist is worse than a loud failure here.
+ */
+export function buildMcpAuthHeader(alias: string, header = 'authorization'): string {
+  if (alias.includes('-')) {
+    throw new Error(
+      `MCP server alias "${alias}" contains a hyphen, which is the alias/header separator. ` +
+        `Use an underscore, or the credential will be parsed as a different server.`,
+    );
+  }
+  return `${MCP_AUTH_PREFIX}${alias.toLowerCase()}-${header.toLowerCase()}`;
+}
+
+/**
+ * Group inbound headers into LiteLLM's per-server shape.
+ *
+ * `{ linear_config: { Authorization: 'Bearer …' } }` — values kept verbatim,
+ * because the caller of this is the lab's own MCP server asking what actually
+ * arrived. Redaction happens on the way out; see `summariseCredentialExposure`.
+ */
+export function groupMcpAuthHeaders(
+  headers: Record<string, string>,
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const parsed = parseMcpAuthHeader(name);
+    if (parsed === undefined) continue;
+    const bucket = out[parsed.alias] ?? {};
+    bucket[parsed.header] = value;
+    out[parsed.alias] = bucket;
+  }
+  return out;
+}
+
+/**
+ * Which server aliases a credential arrived for, and whether any of them is
+ * one the caller did not intend.
+ *
+ * `expected` is the alias the credential was sent for. Anything else that shows
+ * up is a scoping failure: server A holding a token meant for server B.
+ */
+export function checkMcpAuthScoping(
+  headers: Record<string, string>,
+  expected: string,
+): { aliases: string[]; unexpected: string[]; ambiguous: string[] } {
+  const grouped = groupMcpAuthHeaders(headers);
+  const aliases = Object.keys(grouped).sort();
+  const ambiguous = Object.keys(headers)
+    .map((h) => parseMcpAuthHeader(h))
+    .filter((p): p is McpAuthHeader => p !== undefined && p.ambiguous)
+    .map((p) => p.alias);
+  return {
+    aliases,
+    unexpected: aliases.filter((a) => a !== expected.toLowerCase()),
+    ambiguous: [...new Set(ambiguous)].sort(),
+  };
+}
+
 /** Offered-tool names across every listing, deduplicated and sorted. */
 export function offeredToolNames(body: unknown): string[] {
   const names = new Set<string>();

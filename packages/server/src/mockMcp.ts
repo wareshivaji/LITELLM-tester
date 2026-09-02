@@ -39,7 +39,7 @@
  * with the rest of the lab.
  */
 
-import { summariseCredentialExposure } from '@tokenshield/client';
+import { groupMcpAuthHeaders, summariseCredentialExposure } from '@tokenshield/client';
 import type { FastifyInstance } from 'fastify';
 
 /** A tool this server advertises. Kept trivial and deterministic on purpose. */
@@ -266,12 +266,21 @@ export function registerMockMcp(app: FastifyInstance, mock: MockMcpServer): void
     total: mock.requests.length,
     requests: mock.requests.map((r) => {
       const creds = summariseCredentialExposure(r.headers);
+      // Per-server credential buckets, in LiteLLM's shape. Names only — the
+      // question is WHICH server's token arrived here, never its value.
+      const perServer = Object.fromEntries(
+        Object.entries(groupMcpAuthHeaders(r.headers)).map(([alias, hdrs]) => [
+          alias,
+          Object.keys(hdrs).sort(),
+        ]),
+      );
       return {
         seq: r.seq,
         at: r.at,
         rpcMethod: r.rpcMethod,
         headerNames: Object.keys(r.headers).sort(),
         ...creds,
+        mcpAuthByServer: perServer,
         body: r.body,
       };
     }),

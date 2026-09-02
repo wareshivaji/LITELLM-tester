@@ -19,7 +19,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node test/sse.test.mjs && node test/classify.test.mjs && node test/redact.test.mjs && node test/scenarios.test.mjs && node test/prompts.test.mjs && node test/mcpItems.test.mjs && node test/fields.test.mjs && node test/lifecycle.test.mjs"
+    "test": "node test/sse.test.mjs && node test/classify.test.mjs && node test/redact.test.mjs && node test/scenarios.test.mjs && node test/prompts.test.mjs && node test/mcpItems.test.mjs && node test/fields.test.mjs && node test/lifecycle.test.mjs && node test/mcpAuth.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

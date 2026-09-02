@@ -272,10 +272,49 @@ broker reconciles to. The walkthrough's Appendix B.3 already names one-response-
 where TokenShield is ahead. **Do not relax this to match LiteLLM.** A unit test pins the divergence
 so nobody "fixes" it by accident.
 
+### 4. Per-server credentials: the convention, and a hyphen trap
+
+From `test_aresponses_api_with_mcp_passes_mcp_server_auth_headers_to_process_tools`. Its fixture is
+one header and one asserted result:
+
+```
+x-mcp-linear_config-authorization: Bearer linear-token
+        ->  { linear_config: { Authorization: 'Bearer linear-token' } }
+```
+
+Three things fall out.
+
+**The alias and the header split on the FIRST hyphen after the prefix.** So an alias containing a
+hyphen silently becomes a different server: `x-mcp-linear-config-authorization` parses as alias
+`linear`, header `Config-Authorization`. LiteLLM's own example alias uses an **underscore** for
+exactly this reason, and it validates separators out of server names elsewhere in the codebase. A
+gateway that accepts a hyphenated alias will route a credential to a server that does not exist, and
+nothing will say so.
+
+`buildMcpAuthHeader` therefore **throws** on a hyphenated alias rather than emitting a header that
+will be mis-parsed downstream.
+
+**Header names are title-cased** on the way through: `authorization` becomes `Authorization`,
+`x-api-key` becomes `X-Api-Key`.
+
+**Credentials are scoped per server.** Each alias gets its own map, so a token meant for server A
+must never reach server B. `checkMcpAuthScoping` turns that into a lookup against what the lab's own
+MCP server actually received.
+
+Also worth noting: LiteLLM carries these in a `secret_fields.raw_headers` container rather than
+alongside ordinary headers — they are explicitly segregated as secrets at the type level.
+
+**Two prefixed headers are NOT per-server credentials** and must not be parsed as such: the legacy
+`x-mcp-auth`, and the scoping header `x-mcp-servers`. Treating either as one invents a server called
+`auth` or `servers`.
+
+Verified live against the lab's MCP server: two servers' credentials group correctly to
+`{books: [Authorization], docs: [Authorization]}`, a planted `cg-ak-` gateway key is reported as
+leaked via `authorization`, and **no credential value appears anywhere in the report**.
+
 ### Not yet mined
 
-`test_mcp_allowed_tools_filtering`, `test_aresponses_api_with_mcp_passes_mcp_server_auth_headers_to_process_tools`
-(relevant to the credential-leak check), `test_mcp_output_elements_addition`, and the two
+`test_mcp_allowed_tools_filtering`, `test_mcp_output_elements_addition`, and the two
 `TestMcpKeyGrantByAlias` / `TestMcpKeyWithoutAccessIsDenied` e2e classes.
 
 ## What LiteLLM actually is, and where to mine it
