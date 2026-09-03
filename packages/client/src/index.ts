@@ -35,6 +35,7 @@ export { LAB_USER_AGENT, Transport } from './transport.js';
 export type { SendRequest, TransportInit } from './transport.js';
 export { extractModels, TokenShieldClient } from './client.js';
 export { runPreflight } from './preflight.js';
+export type { McpEntitlement } from './preflight.js';
 export type { PreflightOptions } from './preflight.js';
 export {
   INSTRUMENTS,
@@ -97,6 +98,9 @@ export {
 } from './fields.js';
 export type { FieldGap } from './fields.js';
 export {
+  serverSlug,
+  wireNameFor,
+  withWireNames,
   buildMcpAuthHeader,
   checkMcpAuthScoping,
   groupMcpAuthHeaders,
@@ -113,6 +117,9 @@ export {
   tallyPolicies,
 } from './mcp.js';
 export type {
+  WireName,
+  McpServerWithWires,
+  McpToolWithWire,
   McpAuthHeader,
   McpBrokeredCall,
   McpItemIssue,

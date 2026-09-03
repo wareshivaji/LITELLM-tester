@@ -489,6 +489,128 @@ export function checkMcpItems(body: unknown): McpItemIssue[] {
   return issues;
 }
 
+// ── The wire name ────────────────────────────────────────────────────────────
+//
+// The only name the MODEL ever sees, and the only name a forced tool call can
+// use — and it appears in **no API response**. `/v1/mcp/servers` and
+// `/v1/mcp/tools` both return the upstream name; so does the `mcp_list_tools`
+// item; so does `mcp_call`. Measured 2026-09-01/02.
+//
+// So an admin reading a `policy_block` refusal in a log has no API path to the
+// identifier in it. Deriving it here is the only way to show it, and it is what
+// makes a "call the blocked tool by name" test constructible without reading
+// gateway source.
+//
+// Transcribed from `serverSlug` and `namespacedName` in the gateway's
+// `internal/mcp/loop.go` (working tree, 2026-09-01):
+//
+//   slug  = lowercase(trim(server.Name)), keep [a-z0-9], collapse any run of
+//           other characters to a single '_', trim leading/trailing '_'
+//   wire  = cap64(slug + '__' + sanitise(toolName))
+//
+// Two caveats this cannot reproduce, both flagged rather than guessed:
+//
+//  - When two servers produce the SAME slug the gateway appends a short digest
+//    of id|name|url to disambiguate. That digest is not derivable here, so a
+//    slug collision is reported instead of a wrong name.
+//  - Past 64 characters the gateway truncates and appends a digest of the tool
+//    name. Also reported rather than faked.
+
+const MAX_WIRE_NAME = 64;
+
+/** The gateway's server-name slug. */
+export function serverSlug(serverName: string): string {
+  const out: string[] = [];
+  let prevSep = false;
+  for (const ch of serverName.trim().toLowerCase()) {
+    if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) {
+      out.push(ch);
+      prevSep = false;
+    } else if (out.length > 0 && !prevSep) {
+      out.push('_');
+      prevSep = true;
+    }
+  }
+  return out.join('').replace(/^_+|_+$/g, '');
+}
+
+export interface WireName {
+  /** `slug__tool`, or undefined when it cannot be derived exactly. */
+  name?: string;
+  slug: string;
+  /** Why it could not be derived, in terms an admin can act on. */
+  note?: string;
+}
+
+/**
+ * Derive the wire name for one tool. Returns a note instead of a name whenever
+ * the gateway would have added a digest we cannot compute — a plausible-looking
+ * wrong name is worse than an honest gap, because it would be pasted into a
+ * forced-call test and fail for the wrong reason.
+ */
+export function wireNameFor(
+  serverName: string,
+  toolName: string,
+  opts: { slugIsAmbiguous?: boolean } = {},
+): WireName {
+  const slug = serverSlug(serverName);
+  if (slug.length === 0) {
+    return { slug, note: 'server name has no usable characters; the gateway falls back to its id' };
+  }
+  if (opts.slugIsAmbiguous === true) {
+    return {
+      slug,
+      note: `another server shares the slug "${slug}", so the gateway appends a digest that cannot be derived here`,
+    };
+  }
+  const sanitised = toolName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const name = `${slug}__${sanitised}`;
+  if (name.length > MAX_WIRE_NAME) {
+    return { slug, note: `over ${String(MAX_WIRE_NAME)} characters, so the gateway truncates and appends a digest` };
+  }
+  return { name, slug };
+}
+
+/**
+ * Annotate a server listing with the wire name of each tool.
+ *
+ * Slug collisions are detected across the whole listing first, because the
+ * gateway's disambiguating digest only appears when two servers actually clash
+ * — so whether a name is derivable depends on the other servers present.
+ */
+/** A tool plus the name the model actually sees. */
+export interface McpToolWithWire extends McpTool {
+  wire: WireName;
+}
+
+/**
+ * A server whose tools carry wire names.
+ *
+ * `Omit` then re-add rather than an intersection: `McpServer & { tools: ... }`
+ * leaves TypeScript resolving `tools` to the base `McpTool[]`, so `wire` is
+ * invisible at the use site even though it is present at runtime.
+ */
+export interface McpServerWithWires extends Omit<McpServer, 'tools'> {
+  tools: McpToolWithWire[];
+}
+
+export function withWireNames(servers: readonly McpServer[]): McpServerWithWires[] {
+  const slugCounts = new Map<string, number>();
+  for (const server of servers) {
+    const slug = serverSlug(server.name);
+    slugCounts.set(slug, (slugCounts.get(slug) ?? 0) + 1);
+  }
+  return servers.map((server) => ({
+    ...server,
+    tools: server.tools.map((tool) => ({
+      ...tool,
+      wire: wireNameFor(server.name, tool.name, {
+        slugIsAmbiguous: (slugCounts.get(serverSlug(server.name)) ?? 0) > 1,
+      }),
+    })),
+  }));
+}
+
 // ── Per-server MCP credentials ───────────────────────────────────────────────
 //
 // Mined from LiteLLM v1.100.0

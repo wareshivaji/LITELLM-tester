@@ -33,7 +33,7 @@ time on anything else.
 
 **Try this.**
 
-1. Pick a profile and a key, press **Run preflight**. Five checks, no provider call, costs nothing.
+1. Pick a profile and a key, press **Run preflight**. Six checks, no provider call, costs nothing.
 2. Look at **Models available to this key** — that is the key's real `allowedModels`, not the
    gateway's full catalogue. Two keys on the same org will show different lists.
 3. Press **+ add** next to *Gateway*, enter a label and `https://gateway-mumbai.cloudgov.ai`, and
@@ -43,8 +43,26 @@ time on anything else.
    the dropdown says so.
 5. Try adding a key whose alias already exists. It is **refused**, not silently preferred.
 
-**What good looks like.** Five green checks and a model list matching what you expect that key to
-have.
+6. Read **MCP servers and tools for this key**. This is the sixth check, and it is free — 
+   `GET /v1/mcp/servers` generates nothing. It answers *which servers, and which tools on them*,
+   with the policy on each: `allow` in green, `block` in red, `ask` in amber.
+
+   Two things make this the authoritative view. It goes **live on every call** rather than reading
+   the gateway's 60-second cache. And unlike the `mcp_list_tools` item in a response, it appears
+   whether or not a tool ran — that item is only emitted when the gateway actually brokers
+   something, so it cannot answer "what does this key have".
+
+   The blue name beside each tool is the **wire name** — `huggingface__hub_repo_search` — which is
+   what the model is shown and what a refusal names. It is **derived here**, because the gateway
+   returns it nowhere: both MCP endpoints, the `mcp_list_tools` item and `mcp_call` all report the
+   upstream name instead. Copy it to force a call to a blocked tool and check the refusal says
+   `policy_block` rather than `unknown_tool`.
+
+   A key with servers but **zero usable tools** is called out on its own line — that integration
+   will look broken to whoever configured it, and nothing else in the console says why.
+
+**What good looks like.** Six green checks, a model list matching what you expect that key to have,
+and an MCP tool list whose blocked entries are the ones you blocked.
 
 ---
 

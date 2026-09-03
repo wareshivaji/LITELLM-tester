@@ -11,6 +11,9 @@
  */
 
 import { extractModels, TokenShieldClient } from './client.js';
+import { readMcpServers, tallyPolicies, withWireNames } from './mcp.js';
+import type { McpServerWithWires } from './mcp.js';
+import { surfaceById } from './surfaces.js';
 import type { CheckStatus, Exchange, ModelInfo, PreflightCheck, PreflightResult } from './types.js';
 
 const PREFLIGHT_TIMEOUT_MS = 10_000;
@@ -82,6 +85,20 @@ export interface PreflightOptions {
   timeoutMs?: number;
 }
 
+/**
+ * What MCP this key may reach, with each tool's wire name.
+ *
+ * The wire name is derived rather than reported — it appears in no API
+ * response, yet it is the only name the model sees and the only one a
+ * forced-call test can use. See `wireNameFor`.
+ */
+export interface McpEntitlement {
+  servers: McpServerWithWires[];
+  totals: { allow: number; block: number; ask: number; unknown: number };
+  /** Tools actually usable — the number that decides whether this works. */
+  usable: number;
+}
+
 export async function runPreflight(
   client: TokenShieldClient,
   options: PreflightOptions,
@@ -94,6 +111,7 @@ export async function runPreflight(
   const seeds: CheckSeed[] = [];
   let models: ModelInfo[] = [];
   let metrics: unknown;
+  let mcp: McpEntitlement | undefined;
 
   const health = await client.health(timeout);
   exchanges.push(health);
@@ -115,6 +133,7 @@ export async function runPreflight(
     seeds.push(skip('auth', 'Key accepted', NO_GATEWAY));
     seeds.push(skip('catalog', 'Models available to this key', NO_GATEWAY));
     seeds.push(skip('metrics', 'Gateway metrics', NO_GATEWAY));
+    seeds.push(skip('mcp', 'MCP servers and tools for this key', NO_GATEWAY));
   } else {
     const [probe, modelsExchange, metricsExchange] = await Promise.all([
       client.probeRoot(timeout),
@@ -180,6 +199,65 @@ export async function runPreflight(
         : `/api/v1/metrics answered ${metricsExchange.response?.status ?? 'nothing'}`,
       exchange: metricsExchange,
     });
+
+    // ── 6. MCP entitlement ────────────────────────────────────────────────
+    // Free: GET /v1/mcp/servers generates nothing. Worth having on Connect
+    // because "can I use this key" includes what tools it may reach, and that
+    // was previously only visible on another page.
+    //
+    // This endpoint also goes LIVE on every call rather than reading the 60s
+    // cache, so it is the authoritative view — unlike the brokered
+    // `mcp_list_tools` item, which only appears when a tool actually runs and
+    // so cannot be relied on to answer "what does this key have".
+    if (!options.hasKey) {
+      seeds.push(skip('mcp', 'MCP servers and tools for this key', NO_KEY));
+    } else {
+      const surface = surfaceById('mcp.servers');
+      if (surface === undefined) {
+        seeds.push(skip('mcp', 'MCP servers and tools for this key', 'Surface not registered'));
+      } else {
+        const mcpExchange = await client.call(surface, undefined, timeout);
+        exchanges.push(mcpExchange);
+        const mcpOk = mcpExchange.response?.status === 200;
+        const servers = mcpOk ? readMcpServers(mcpExchange.response?.body) : [];
+        const withWire = withWireNames(servers);
+        const allTools = servers.flatMap((sv) => sv.tools);
+        const tally = tallyPolicies(allTools);
+
+        if (mcpOk) {
+          mcp = {
+            servers: withWire,
+            totals: tally,
+            // A key with entitlement but zero usable tools is worth calling
+            // out on its own: the integration will look broken to whoever
+            // configured it, and nothing else in the console says why.
+            usable: tally.allow,
+          };
+        }
+
+        seeds.push({
+          id: 'mcp',
+          label: 'MCP servers and tools for this key',
+          status: !mcpOk
+            ? 'warn'
+            : servers.length === 0
+              ? 'warn'
+              : tally.allow === 0
+                ? 'warn'
+                : 'pass',
+          detail: !mcpOk
+            ? `/v1/mcp/servers answered ${mcpExchange.response?.status ?? 'nothing'}`
+            : servers.length === 0
+              ? 'No MCP servers for this key. Note this endpoint cannot distinguish "none configured" from "discovery failed"'
+              : tally.allow === 0
+                ? `${servers.length} server(s) reachable but every tool is blocked — the integration will look broken`
+                : `${String(tally.allow)} tool${tally.allow === 1 ? '' : 's'} usable across ${String(servers.length)} server${servers.length === 1 ? '' : 's'}` +
+                  (tally.block > 0 ? `, ${String(tally.block)} blocked` : '') +
+                  (tally.ask > 0 ? `, ${String(tally.ask)} marked "ask" (unenforceable)` : ''),
+          exchange: mcpExchange,
+        });
+      }
+    }
   }
 
   const checks = seeds.map(toCheck);
@@ -193,6 +271,7 @@ export async function runPreflight(
     checks,
     models,
     ...(metrics !== undefined ? { metrics } : {}),
+    ...(mcp !== undefined ? { mcp } : {}),
     exchanges,
   };
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { AuthScheme } from '@tokenshield/client';
+import type { AuthScheme, McpEntitlement } from '@tokenshield/client';
 
 import type { LabConfigResponse, PreflightResponse } from '../api';
 import { TargetPicker } from '../components/TargetPicker';
@@ -24,6 +24,11 @@ interface ConnectProps {
 export function Connect(props: ConnectProps) {
   const { config, result } = props;
   const [modelFilter, setModelFilter] = useState('');
+
+  // `mcp` is `unknown` on PreflightResult to keep types.ts free of an import
+  // cycle (mcp.ts already imports from types.ts), so it is narrowed here — the
+  // same treatment `metrics` gets.
+  const mcp = result?.mcp as McpEntitlement | undefined;
 
   const models = useMemo(() => {
     const all = result?.models ?? [];
@@ -137,6 +142,81 @@ export function Connect(props: ConnectProps) {
           </div>
           <p className="mt-3 text-xs text-zinc-600">
             {models.length} of {result.models.length} shown
+          </p>
+        </Card>
+      )}
+
+      {mcp !== undefined && (
+        <Card
+          title="MCP servers and tools for this key"
+          subtitle="GET /v1/mcp/servers — live on every call, not the 60s cache, so this is the authoritative view"
+        >
+          <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
+            {mcp.usable} usable
+            {mcp.totals.block > 0 && <> · {mcp.totals.block} blocked</>}
+            {mcp.totals.ask > 0 && (
+              <> · {mcp.totals.ask} marked <code className="mono">ask</code></>
+            )}
+            {' '}across {mcp.servers.length} server{mcp.servers.length === 1 ? '' : 's'}. A blocked
+            tool is <strong>withheld from the model entirely</strong> rather than refused, so this
+            list — not the model&rsquo;s answer — is what proves a policy is in force.
+          </p>
+
+          <div className="space-y-3">
+            {mcp.servers.map((server) => (
+              <div key={server.id ?? server.name} className="rounded border border-zinc-800 bg-zinc-900/40 p-3">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-xs font-medium text-zinc-200">{server.name}</span>
+                  {server.id !== undefined && (
+                    <code className="mono text-[10px] text-zinc-600">{server.id}</code>
+                  )}
+                  <span className="mono text-[10px] text-zinc-600">
+                    {server.tools.length} tool{server.tools.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                <div className="mt-2 space-y-1">
+                  {server.tools.map((tool) => (
+                    <div key={tool.name} className="flex flex-wrap items-baseline gap-2">
+                      <span
+                        className={`mono rounded px-1 text-[10px] ${
+                          tool.policy === 'block'
+                            ? 'bg-rose-500/10 text-rose-300'
+                            : tool.policy === 'ask'
+                              ? 'bg-amber-500/10 text-amber-300'
+                              : 'bg-emerald-500/10 text-emerald-300'
+                        }`}
+                      >
+                        {tool.policy}
+                      </span>
+                      <span className="mono text-[11px] text-zinc-300">{tool.name}</span>
+                      {/*
+                        The wire name is DERIVED, not reported — it appears in no
+                        API response, yet it is the only name the model sees and
+                        the only one a forced-call test can use.
+                      */}
+                      {tool.wire.name !== undefined ? (
+                        <code className="mono text-[10px] text-sky-400/70">{tool.wire.name}</code>
+                      ) : (
+                        <span className="text-[10px] text-zinc-600" title={tool.wire.note}>
+                          wire name not derivable
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-3 text-[10px] leading-relaxed text-zinc-600">
+            The blue name is the <strong>wire name</strong> — what the model is shown, and what a
+            refusal names. It is derived from the server name here because the gateway returns it
+            nowhere: both MCP endpoints, the <code className="mono">mcp_list_tools</code> item and{' '}
+            <code className="mono">mcp_call</code> all report the upstream name instead. Use it to
+            force a call to a blocked tool and see whether the refusal is{' '}
+            <code className="mono">policy_block</code> rather than{' '}
+            <code className="mono">unknown_tool</code>.
           </p>
         </Card>
       )}

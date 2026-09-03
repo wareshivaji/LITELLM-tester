@@ -238,5 +238,7 @@ export interface PreflightResult {
   checks: PreflightCheck[];
   models: ModelInfo[];
   metrics?: unknown;
+  /** MCP entitlement, when a key was supplied and the endpoint answered. */
+  mcp?: unknown;
   exchanges: Exchange[];
 }
