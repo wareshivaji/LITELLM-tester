@@ -86,9 +86,9 @@ for SDKs — reused on ourselves.
 |---|---|---|---|
 | **G0** | Scaffold and seam | **DONE** — see below | low |
 | **G1** | Contract modules | **DONE, premise corrected** — see below | low |
-| **G2** | Transport + streaming | The one genuinely hard piece: the SSE relay, the abort path, header capture. Everything the `res.on('close')` bug taught us has to be re-learned in Go's idiom | **high** |
-| **G3** | Orchestration | Preflight, scenarios, prompts, tool loops, governance. Mechanical once G2 lands | medium |
-| **G4** | Retire Node | Delete the proxy and the TS backend. One binary, CI mode, exit codes | low |
+| **G2** | Transport + streaming | **DONE** — SSE parser + transport, all four fixes tested | **high** |
+| **G3** | Orchestration | **NOT DONE** — see below. ~4,900 lines, and the oracle does not reach it | medium |
+| **G4** | Retire Node | **HALF DONE** — `lab check` CI mode and single binary shipped; retiring Node waits on G3 | low |
 
 ### G0 as built, and one deviation
 
@@ -164,6 +164,44 @@ on the `ServerResponse` rather than the request, switching on the response conte
 the request's intent, retaining captured headers on the abort path, and rounding after subtracting
 for gap timing. Every one of those was a live bug. The Go port must reproduce all four, and the
 existing tests are the only reason we would notice if it did not.
+
+### G2 as built
+
+SSE parser matched the oracle on all 20 golden cases first try, plus two
+byte-level tests the JSON fixtures cannot express: a multi-byte rune split at
+every one of 19 boundaries, and a stream cut mid-rune.
+
+Transport has one test per hard-won fix, each named after the bug it prevents.
+Fix 4 earned its keep immediately — my test asserted `Round2(1.005) == 1.01`,
+the TypeScript gives `1`, and the **test** was wrong. Comparing the two also
+exposed a real divergence on negatives that would never have been noticed by
+reading.
+
+### G3 — not done, and why
+
+**~4,900 lines** across preflight, scenarios, prompts, tool loops and
+governance. Two reasons it is not a "finish it in the same sitting" job:
+
+**The oracle does not reach it.** G1 and G2 were verifiable because their inputs
+are values: a body in, a verdict out; bytes in, frames out. A golden file settles
+correctness completely. Orchestration is *sequences of calls with decisions
+between them* — the tool loop's turn budget, the scenario runner's early abort
+after three consecutive failures, the burst's pacing. None of that is expressible
+as a fixture, so it needs live runs against a gateway and real spend to verify,
+and a Go port that merely compiles proves nothing.
+
+**The evidence says porting-by-reading does not work here.** The classifier was
+about 200 lines of pure logic and my first draft was wrong in eleven places —
+caught only because a golden existed. Repeating that over 4,900 lines *without*
+a golden is how a rewrite quietly becomes worse than what it replaced.
+
+The way to do it: one endpoint at a time behind the existing proxy, each verified
+against Node by sending the same request to both and diffing — the mechanism G0
+already built and `/api/compare` already implements for SDKs. That is several
+sittings of real work, not a push.
+
+**Nothing is blocked meanwhile.** Every unported endpoint is still served by
+Node through the front door, and the tool works exactly as before.
 
 **Suggested checkpoint:** stop after **G1**. If importing the gateway's types genuinely deletes the
 drift class — measured by whether the next contract change requires a lab edit — the rest is worth
