@@ -26,9 +26,11 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md,css}\"",
     "dev:go": "go -C go run ./cmd/lab -addr 127.0.0.1:8787 -upstream http://127.0.0.1:8789",
-    "test:go": "go -C go test ./...",
+    "test:go": "npm run golden:check && go -C go test ./...",
     "vet:go": "go -C go vet ./...",
-    "build:go": "go -C go build -o ../bin/lab ./cmd/lab"
+    "build:go": "go -C go build -o ../bin/lab ./cmd/lab",
+    "golden": "node scripts/gen-golden.mjs",
+    "golden:check": "npm run build:client && node scripts/gen-golden.mjs --check"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

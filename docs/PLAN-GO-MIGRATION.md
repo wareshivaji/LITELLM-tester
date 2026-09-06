@@ -85,7 +85,7 @@ for SDKs — reused on ourselves.
 | # | Phase | What lands | Risk |
 |---|---|---|---|
 | **G0** | Scaffold and seam | **DONE** — see below | low |
-| **G1** | Contract modules | `classify`, `fields`, `mcp`, `signal`, `surfaces` in Go, **importing the gateway's types**. Golden-file cross-check against the TS tests | low |
+| **G1** | Contract modules | **DONE, premise corrected** — see below | low |
 | **G2** | Transport + streaming | The one genuinely hard piece: the SSE relay, the abort path, header capture. Everything the `res.on('close')` bug taught us has to be re-learned in Go's idiom | **high** |
 | **G3** | Orchestration | Preflight, scenarios, prompts, tool loops, governance. Mechanical once G2 lands | medium |
 | **G4** | Retire Node | Delete the proxy and the TS backend. One binary, CI mode, exit codes | low |
@@ -116,6 +116,48 @@ One narrow config relaxation: `TSLAB_PORT` may now come from the ambient environ
 script can move Node without editing a gitignored file. The rule it bends is about **credentials** —
 the stale-`TS_KEY` story that cost two hours — and a port cannot authenticate as anything. Not to be
 extended without a reason at least that specific.
+
+### G1 as built — the premise did not survive contact
+
+**Importing the gateway's types is impossible.** Two blockers, found by trying:
+
+1. **Toolchain**, proven: the gateway's `go.mod` says `go 1.25.0`, the toolchain here is `1.22.2`, and
+   `go build` refuses before reaching any import. Fixable, and not the real problem.
+2. **`internal/`**, not fixable from this side: the gateway module is `cloudgov.ai/ai-gateway` and
+   every contract type lives under `internal/` — there is no `pkg/`. Go allows importing an
+   `internal` package only from within the subtree rooted at its parent, enforced by the compiler.
+   A separate module cannot import them, `replace` directive or not.
+
+So the choice was: get the gateway to expose a `pkg/contract`; move this lab inside the gateway repo;
+transcribe again in a new language and gain nothing; or **extract and verify**, which is what landed.
+
+**Extract and verify.** Every value transcribed from gateway source records where it came from, and
+`TestGatewaySourceHasNotDrifted` re-reads that source and fails when it no longer says what we
+recorded. Three facts so far: the wire-name separator, the 64-character cap, the tool-name sanitiser.
+
+This does not make drift *impossible* the way an import would — it makes it **loud**. That is enough
+for the actual problem: all three transcription corrections this session were *"the source changed
+and nobody noticed for weeks"*, not *"someone typed it wrong"*. And unlike an import it needs nothing
+from another team.
+
+Proven by pointing the check at a copy of `loop.go` with the separator changed to `--`. It failed,
+naming the value, the change, and the consequence. It also **skips rather than passes** when the
+gateway checkout is absent: a green tick for a check that did not run is a lie.
+
+**The TypeScript is the oracle, and it earned that.** `golden_test.go` reads goldens generated from
+the TS implementation and asserts the Go port produces identical answers. The first draft of
+`Classify` looked correct and **disagreed in eleven places** — the guardrail check has to run before
+every status branch because a guardrail block is a 400, there is a `tool-policy` verdict I had
+omitted, an unrecognised 403 falls through to `unknown` rather than `auth`, and a dozen default
+detail strings differed. None of that would have been caught by review.
+
+`npm run test:go` regenerates and compares the goldens before running, so Go can never be verified
+against a stale oracle. Proven by tampering with a golden: the run stops with `STALE`.
+
+**Verdict on the checkpoint.** The plan said to judge G1 on whether importing deletes the drift
+class. Importing turned out to be unavailable, so the honest answer is: **drift is now detected
+rather than prevented**, which is most of the value. Whether G2 is worth its risk should be judged on
+whether that detection actually fires on the next gateway change.
 
 **G2 is where this can go wrong.** The current streaming code carries four hard-won fixes: listening
 on the `ServerResponse` rather than the request, switching on the response content-type rather than

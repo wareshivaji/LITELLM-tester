@@ -1,0 +1,300 @@
+[
+  {
+    "name": "200 ok",
+    "envelope": "none",
+    "error": {
+      "envelope": "none",
+      "message": ""
+    },
+    "verdict": {
+      "kind": "ok",
+      "detail": "200",
+      "envelope": "none"
+    }
+  },
+  {
+    "name": "201 also ok",
+    "envelope": "none",
+    "error": {
+      "envelope": "none",
+      "message": ""
+    },
+    "verdict": {
+      "kind": "ok",
+      "detail": "201",
+      "envelope": "none"
+    }
+  },
+  {
+    "name": "401 openai envelope",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "missing api key",
+      "code": "missing_api_key",
+      "type": "authentication_error"
+    },
+    "verdict": {
+      "kind": "auth",
+      "detail": "missing api key",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "403 model not allowed",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "model bedrock-x is not allowed for this key",
+      "code": "model_not_allowed_for_key"
+    },
+    "verdict": {
+      "kind": "model-denied",
+      "detail": "model bedrock-x is not allowed for this key",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "403 no provider credential",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "no credential",
+      "code": "no_credential_for_provider"
+    },
+    "verdict": {
+      "kind": "no-credential",
+      "detail": "no credential",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "403 ip allowlist",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "Your IP address is not allowed"
+    },
+    "verdict": {
+      "kind": "ip-blocked",
+      "detail": "Your IP address is not allowed",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "403 plain forbidden",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "forbidden"
+    },
+    "verdict": {
+      "kind": "unknown",
+      "detail": "forbidden",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "429 budget by type",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "spend cap",
+      "type": "insufficient_quota"
+    },
+    "verdict": {
+      "kind": "budget",
+      "detail": "spend cap",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "429 budget by budget_name only",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "over budget",
+      "budgetName": "key-cap"
+    },
+    "verdict": {
+      "kind": "budget",
+      "detail": "over budget (\"key-cap\")",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "429 anthropic billing_error is budget",
+    "envelope": "anthropic",
+    "error": {
+      "envelope": "anthropic",
+      "message": "over",
+      "type": "billing_error"
+    },
+    "verdict": {
+      "kind": "budget",
+      "detail": "over",
+      "envelope": "anthropic"
+    }
+  },
+  {
+    "name": "429 flat rate limit is NOT budget",
+    "envelope": "flat",
+    "error": {
+      "envelope": "flat",
+      "message": "rate limit exceeded",
+      "code": "rate limit exceeded"
+    },
+    "verdict": {
+      "kind": "ratelimit",
+      "detail": "rate limit exceeded",
+      "envelope": "flat"
+    }
+  },
+  {
+    "name": "400 guardrail by code",
+    "envelope": "flat",
+    "error": {
+      "envelope": "flat",
+      "message": "Request blocked by content guardrails",
+      "code": "guardrail_violation"
+    },
+    "verdict": {
+      "kind": "guardrail",
+      "detail": "Blocked by content guardrails",
+      "envelope": "flat"
+    }
+  },
+  {
+    "name": "400 guardrail by message",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "blocked by guardrail rule X"
+    },
+    "verdict": {
+      "kind": "guardrail",
+      "detail": "Blocked by content guardrails",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "400 plain bad request is NOT guardrail",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "inferenceConfig.stopSequences.0 is blank"
+    },
+    "verdict": {
+      "kind": "bad-request",
+      "detail": "inferenceConfig.stopSequences.0 is blank",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "404",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "not found"
+    },
+    "verdict": {
+      "kind": "not-found",
+      "detail": "not found",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "500 openai envelope",
+    "envelope": "openai",
+    "error": {
+      "envelope": "openai",
+      "message": "internal server error",
+      "code": "internal_error",
+      "type": "api_error"
+    },
+    "verdict": {
+      "kind": "server-error",
+      "detail": "internal server error",
+      "envelope": "openai"
+    }
+  },
+  {
+    "name": "501 flat envelope",
+    "envelope": "flat",
+    "error": {
+      "envelope": "flat",
+      "message": "not implemented",
+      "code": "not implemented"
+    },
+    "verdict": {
+      "kind": "server-error",
+      "detail": "not implemented",
+      "envelope": "flat"
+    }
+  },
+  {
+    "name": "418 unclassified",
+    "envelope": "none",
+    "error": {
+      "envelope": "none",
+      "message": ""
+    },
+    "verdict": {
+      "kind": "bad-request",
+      "detail": "Rejected with 418",
+      "envelope": "none"
+    }
+  },
+  {
+    "name": "transport error beats everything",
+    "envelope": "none",
+    "error": {
+      "envelope": "none",
+      "message": ""
+    },
+    "verdict": {
+      "kind": "transport-error",
+      "detail": "fetch failed - ECONNREFUSED",
+      "envelope": "none"
+    }
+  },
+  {
+    "name": "no envelope on a success body",
+    "envelope": "none",
+    "error": {
+      "envelope": "none",
+      "message": ""
+    },
+    "verdict": {
+      "kind": "ok",
+      "detail": "200",
+      "envelope": "none"
+    }
+  },
+  {
+    "name": "no envelope on a non-object",
+    "envelope": "none",
+    "error": {
+      "envelope": "none",
+      "message": ""
+    },
+    "verdict": {
+      "kind": "ok",
+      "detail": "200",
+      "envelope": "none"
+    }
+  },
+  {
+    "name": "null body",
+    "envelope": "none",
+    "error": {
+      "envelope": "none",
+      "message": ""
+    },
+    "verdict": {
+      "kind": "server-error",
+      "detail": "Gateway returned 500",
+      "envelope": "none"
+    }
+  }
+]

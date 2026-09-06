@@ -1,0 +1,106 @@
+[
+  {
+    "name": "live: HuggingFace",
+    "slug": "huggingface",
+    "wire": {
+      "name": "huggingface__hub_repo_search",
+      "slug": "huggingface"
+    }
+  },
+  {
+    "name": "live: MS Learn",
+    "slug": "ms_learn",
+    "wire": {
+      "name": "ms_learn__microsoft_docs_fetch",
+      "slug": "ms_learn"
+    }
+  },
+  {
+    "name": "live: Cloudflare docs",
+    "slug": "cloudflare_docs",
+    "wire": {
+      "name": "cloudflare_docs__search_cloudflare_documentation",
+      "slug": "cloudflare_docs"
+    }
+  },
+  {
+    "name": "separator run collapses",
+    "slug": "my_cool_server",
+    "wire": {
+      "name": "my_cool_server__x",
+      "slug": "my_cool_server"
+    }
+  },
+  {
+    "name": "ends trimmed",
+    "slug": "books",
+    "wire": {
+      "name": "books__x",
+      "slug": "books"
+    }
+  },
+  {
+    "name": "digits survive",
+    "slug": "server_2",
+    "wire": {
+      "name": "server_2__x",
+      "slug": "server_2"
+    }
+  },
+  {
+    "name": "punctuation separates",
+    "slug": "bob_s_tools",
+    "wire": {
+      "name": "bob_s_tools__x",
+      "slug": "bob_s_tools"
+    }
+  },
+  {
+    "name": "nothing usable",
+    "slug": "",
+    "wire": {
+      "slug": "",
+      "note": "server name has no usable characters; the gateway falls back to its id"
+    }
+  },
+  {
+    "name": "tool name sanitised",
+    "slug": "s",
+    "wire": {
+      "name": "s__get_thing_now",
+      "slug": "s"
+    }
+  },
+  {
+    "name": "hyphen and underscore are legal",
+    "slug": "s",
+    "wire": {
+      "name": "s__a-b_c",
+      "slug": "s"
+    }
+  },
+  {
+    "name": "ambiguous slug refuses",
+    "slug": "huggingface",
+    "wire": {
+      "slug": "huggingface",
+      "note": "another server shares the slug \"huggingface\", so the gateway appends a digest that cannot be derived here"
+    }
+  },
+  {
+    "name": "over 64 chars refuses",
+    "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "wire": {
+      "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "note": "over 64 characters, so the gateway truncates and appends a digest"
+    }
+  },
+  {
+    "name": "exactly 64 is fine",
+    "slug": "aaaaaaaaaa",
+    "wire": {
+      "name": "aaaaaaaaaa__bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "slug": "aaaaaaaaaa"
+    }
+  }
+]
