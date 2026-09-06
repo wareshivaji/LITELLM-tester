@@ -15,16 +15,20 @@
   "scripts": {
     "build:client": "npm run build -w @tokenshield/client",
     "build": "npm run build:client && npm run build -w @tokenshield/lab-server && npm run build -w @tokenshield/lab-web",
-    "dev": "npm run build:client && concurrently -n client,server,web -c cyan,magenta,green \"npm:dev:client\" \"npm:dev:server\" \"npm:dev:web\"",
+    "dev": "npm run build:client && concurrently -n client,server,go,web -c cyan,magenta,yellow,green \"npm:dev:client\" \"npm:dev:server\" \"npm:dev:go\" \"npm:dev:web\"",
     "dev:client": "npm run dev -w @tokenshield/client",
-    "dev:server": "npm run dev -w @tokenshield/lab-server",
+    "dev:server": "node scripts/with-env.mjs TSLAB_PORT=8789 npm run dev -w @tokenshield/lab-server",
     "dev:web": "npm run dev -w @tokenshield/lab-web",
     "typecheck": "npm run typecheck -w @tokenshield/client && npm run typecheck -w @tokenshield/lab-server && npm run typecheck -w @tokenshield/lab-web",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "npm run test -w @tokenshield/client",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,json,md,css}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md,css}\"",
+    "dev:go": "go -C go run ./cmd/lab -addr 127.0.0.1:8787 -upstream http://127.0.0.1:8789",
+    "test:go": "go -C go test ./...",
+    "vet:go": "go -C go vet ./...",
+    "build:go": "go -C go build -o ../bin/lab ./cmd/lab"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
@@ -33,5 +37,6 @@
     "prettier": "^3.4.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.68.0"
-  }
+  },
+  "//go": "The go: scripts run inside ./go \u2014 see scripts/with-env.mjs for the port shim."
 }

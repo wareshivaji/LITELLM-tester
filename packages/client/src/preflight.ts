@@ -246,7 +246,12 @@ export async function runPreflight(
                 ? 'warn'
                 : 'pass',
           detail: !mcpOk
-            ? `/v1/mcp/servers answered ${mcpExchange.response?.status ?? 'nothing'}`
+            ? // Report the CAUSE, not the absence. "answered nothing" hides a
+              // transport error behind a phrase that reads like the gateway
+              // replied emptily — the third time this same mistake has been
+              // made here, so the transport error now comes first.
+              (mcpExchange.transportError ??
+              `/v1/mcp/servers answered ${mcpExchange.response?.status ?? 'no response'}`)
             : servers.length === 0
               ? 'No MCP servers for this key. Note this endpoint cannot distinguish "none configured" from "discovery failed"'
               : tally.allow === 0

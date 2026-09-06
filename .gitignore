@@ -21,3 +21,6 @@ out/*
 .DS_Store
 Thumbs.db
 coverage/
+
+# Go build output
+bin/

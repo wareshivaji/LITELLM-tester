@@ -84,11 +84,38 @@ for SDKs — reused on ourselves.
 
 | # | Phase | What lands | Risk |
 |---|---|---|---|
-| **G0** | Scaffold and seam | Go module, `/api/health` + `/api/config` in Go, the proxy, both backends up. React untouched | low |
+| **G0** | Scaffold and seam | **DONE** — see below | low |
 | **G1** | Contract modules | `classify`, `fields`, `mcp`, `signal`, `surfaces` in Go, **importing the gateway's types**. Golden-file cross-check against the TS tests | low |
 | **G2** | Transport + streaming | The one genuinely hard piece: the SSE relay, the abort path, header capture. Everything the `res.on('close')` bug taught us has to be re-learned in Go's idiom | **high** |
 | **G3** | Orchestration | Preflight, scenarios, prompts, tool loops, governance. Mechanical once G2 lands | medium |
 | **G4** | Retire Node | Delete the proxy and the TS backend. One binary, CI mode, exit codes | low |
+
+### G0 as built, and one deviation
+
+Go module at `go/`, front door on **:8787**, Node moved to **:8789**. React unchanged.
+
+**Deviation from the plan: `/api/config` was NOT migrated.** It reads the session registry —
+gateways and keys typed into the console and held in memory by Node. Serving it from Go would give
+two processes two different ideas of the same state, so a gateway added in one would be invisible in
+the other. A state split on day one is a bad trade for the appearance of progress.
+
+`/api/health` is **merged** instead: Go calls Node's, adds its own block, returns the union. The
+existing shape is preserved exactly, and the seam is proven to handle response transformation —
+which is what every later phase needs. `/api/backends` is Go-native and answers even when Node is
+down, which is when someone most wants to know what is up.
+
+`X-Lab-Backend: go | node | go+node` on every response, so "which process answered this" is never a
+guess.
+
+Verified: proxied bodies are **byte-identical** to Node's; with Node down `/api/health` returns 200
+`degraded` rather than failing, and a proxied endpoint returns 502 naming the fix
+(`npm run dev:server`). 9 Go tests, and `FlushInterval: -1` is asserted because a buffering proxy
+would silently destroy every SSE timing measurement `/api/stream` exists to make.
+
+One narrow config relaxation: `TSLAB_PORT` may now come from the ambient environment so the dev
+script can move Node without editing a gitignored file. The rule it bends is about **credentials** —
+the stale-`TS_KEY` story that cost two hours — and a port cannot authenticate as anything. Not to be
+extended without a reason at least that specific.
 
 **G2 is where this can go wrong.** The current streaming code carries four hard-won fixes: listening
 on the `ServerResponse` rather than the request, switching on the response content-type rather than

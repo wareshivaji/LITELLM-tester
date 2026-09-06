@@ -170,7 +170,16 @@ export function loadConfig(): LabConfig {
       : (apiKeyAliases[0]?.alias ?? null);
 
   return {
-    port: intOr(raw['TSLAB_PORT'], 8787),
+    // The ONE value read from the ambient environment, and deliberately not
+    // a credential. During the Go migration the Node backend moves behind the
+    // Go front door, and the dev script needs to say so without editing a
+    // gitignored file. The rule at the top of this module is about KEYS — the
+    // stale-TS_KEY story that cost two hours was a credential outranking the
+    // one the runner thought it had. A port cannot authenticate as anything.
+    //
+    // Do not extend this to a second value without a reason at least this
+    // specific.
+    port: intOr(process.env['TSLAB_PORT'] ?? raw['TSLAB_PORT'], 8787),
     historyLimit: intOr(raw['TSLAB_HISTORY_LIMIT'], 200),
     timeoutMs: intOr(raw['TSLAB_TIMEOUT_MS'], 60_000),
     profiles,

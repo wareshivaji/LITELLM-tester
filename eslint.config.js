@@ -47,6 +47,14 @@ export default tseslint.config(
   },
 
   {
+    // Dev scripts are plain Node ESM, run directly with `node` — same shape as
+    // the test files below, so the same globals apply.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { console: 'readonly', process: 'readonly' },
+    },
+  },
+  {
     // Test files are plain Node ESM, run directly with `node`.
     files: ['packages/client/test/**/*.mjs'],
     languageOptions: {
