@@ -1,0 +1,47 @@
+# LiteLLM as the reference implementation, for `lab diff`.
+#
+# Why this exists: TokenShield's own behaviour cannot be the standard while the
+# implementation is incomplete. LiteLLM is the contract we compare against, so
+# every divergence this harness reports is measured against a second real
+# gateway rather than against my description of one.
+#
+# Local only. Runs on 127.0.0.1:4001 — NOT 4000, which is where the TokenShield
+# gateway runs locally, and a collision there would silently compare a gateway
+# against itself.
+#
+# sk-1234 is LiteLLM's own documentation placeholder. It authenticates nothing
+# but this loopback process and is deliberately not a real credential.
+
+model_list:
+  # A model that resolves but has no usable credential here. That is the point:
+  # it lets request VALIDATION be compared without either gateway reaching a
+  # provider, so no case in the free tier spends anything.
+  - model_name: bedrock-claude-haiku-4.5
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_region_name: us-east-1
+
+  # A second entry under the name TokenShield uses for its own default, so a
+  # case naming either model reaches a configured route on both sides.
+  - model_name: test-model
+    litellm_params:
+      model: bedrock/amazon.nova-micro-v1:0
+      aws_region_name: us-east-1
+
+mcp_servers:
+  # Public, unauthenticated, HTTP transport. Chosen because it needs no
+  # credential: the comparison here is of MCP surface SHAPE, not of the tools
+  # themselves, and the two gateways cannot share backing servers anyway
+  # (TokenShield's are configured per-org, server-side).
+  deepwiki:
+    transport: "http"
+    url: "https://mcp.deepwiki.com/mcp"
+    # The reference behaviour for tool-level blocking, which is the exact
+    # question TokenShield's key-level BLOCK policy raises.
+    disallowed_tools: ["read_wiki_contents"]
+
+general_settings:
+  master_key: sk-1234
+
+litellm_settings:
+  drop_params: false   # surface unsupported-parameter handling instead of hiding it

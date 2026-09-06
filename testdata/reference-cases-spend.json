@@ -1,0 +1,69 @@
+[
+  {
+    "Name": "SPEND chat: a minimal real completion",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": { "model": "bedrock-claude-haiku-4.5", "messages": [{ "role": "user", "content": "Reply with the single word: ok" }], "max_tokens": 5 },
+    "Volatile": [
+      { "Pattern": "created", "Why": "unix timestamp of the call" },
+      { "Pattern": "choices.*.message.content", "Why": "model output is not deterministic" },
+      { "Pattern": "usage.*", "Why": "token counts vary with the provider's tokeniser" },
+      { "Pattern": "model", "Why": "each gateway names the underlying model differently" },
+      { "Pattern": "system_fingerprint", "Why": "provider build identifier" }
+    ]
+  },
+  {
+    "Name": "SPEND chat: LANDMINE-3, stop as a bare string",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": { "model": "bedrock-claude-haiku-4.5", "messages": [{ "role": "user", "content": "Count: one two three four five" }], "stop": "three", "max_tokens": 30 },
+    "Volatile": [
+      { "Pattern": "created", "Why": "unix timestamp" },
+      { "Pattern": "usage.*", "Why": "token counts" },
+      { "Pattern": "model", "Why": "underlying model naming" }
+    ]
+  },
+  {
+    "Name": "SPEND responses: shorthand {role,content} alongside a tool item",
+    "Method": "POST",
+    "Path": "/v1/responses",
+    "Body": { "model": "bedrock-claude-haiku-4.5", "input": [{ "role": "user", "content": "say ok" }], "tools": [{ "type": "function", "name": "noop", "description": "does nothing", "parameters": { "type": "object", "properties": {} } }], "max_output_tokens": 20 },
+    "Volatile": [
+      { "Pattern": "created_at", "Why": "unix timestamp" },
+      { "Pattern": "output.*.content.*.text", "Why": "model output" },
+      { "Pattern": "usage.*", "Why": "token counts" },
+      { "Pattern": "model", "Why": "underlying model naming" }
+    ]
+  },
+  {
+    "Name": "SPEND chat: a declared type:mcp tool block (OpenAI documents 400; TokenShield measured 403)",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": { "model": "bedrock-claude-haiku-4.5", "messages": [{ "role": "user", "content": "list the tools you have" }], "tools": [{ "type": "mcp", "server_label": "deepwiki", "server_url": "https://mcp.deepwiki.com/mcp", "require_approval": "never" }], "max_tokens": 50 }
+  },
+  {
+    "Name": "SPEND responses: brokered MCP — do tools reach the model with input_schema?",
+    "Method": "POST",
+    "Path": "/v1/responses",
+    "Body": { "model": "bedrock-claude-haiku-4.5", "input": "Search Hugging Face for a small sentiment model.", "max_output_tokens": 400 },
+    "Volatile": [
+      { "Pattern": "created_at", "Why": "unix timestamp" },
+      { "Pattern": "output.*.content.*.text", "Why": "model output" },
+      { "Pattern": "output.*.id", "Why": "per-item ids" },
+      { "Pattern": "usage.*", "Why": "token counts" },
+      { "Pattern": "model", "Why": "underlying model naming" }
+    ]
+  },
+  {
+    "Name": "SPEND chat: named tool_choice — does it actually restrict?",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": { "model": "bedrock-claude-haiku-4.5", "messages": [{ "role": "user", "content": "what is 2+2?" }], "tools": [{ "type": "function", "function": { "name": "adder", "description": "adds", "parameters": { "type": "object", "properties": { "a": { "type": "number" } } } } }, { "type": "function", "function": { "name": "greeter", "description": "greets", "parameters": { "type": "object", "properties": {} } } }], "tool_choice": { "type": "function", "function": { "name": "greeter" } }, "max_tokens": 60 },
+    "Volatile": [
+      { "Pattern": "created", "Why": "unix timestamp" },
+      { "Pattern": "usage.*", "Why": "token counts" },
+      { "Pattern": "model", "Why": "underlying model naming" },
+      { "Pattern": "choices.*.message.tool_calls.*.function.arguments", "Why": "argument values vary" }
+    ]
+  }
+]

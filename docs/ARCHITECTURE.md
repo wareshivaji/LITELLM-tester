@@ -611,3 +611,40 @@ ticked.
 - **Nothing is pushed.** No remote is configured; siblings live in AWS CodeCommit.
 - In dev, React StrictMode double-invokes the model-catalogue effect, so switching target fires two
   free `/v1/models` calls. Disappears in a production build; not worth code to avoid.
+
+### AD-31 · The reference comparison runs against a second implementation, not against my description of the contract
+
+`lab diff` was built as the migration gate — does the Go handler answer what the
+Node one does? Its targets are named `a`/`b` rather than `go`/`node` for one
+reason: the same code answers the more valuable question when `b` is LiteLLM.
+
+Why bother running LiteLLM at all when its source is already cloned and read:
+reading the source tells me what LiteLLM intends, running it tells me what it
+does. Three of the divergences found on the first run are LiteLLM defects that
+no amount of reading would have surfaced — `error.code` carrying the HTTP status
+as a string, Python's `None` stringified into JSON as `"None"`, and a raw
+`TypeError` escaping as a 500 on `/v1/responses`. Two of them make TokenShield
+the more correct of the two implementations, which is not a conclusion I would
+have reached from the docs.
+
+Three consequences shaped the harness:
+
+- **Per-target paths** (`APath`/`BPath`). The same logical endpoint is not at
+  the same URL on both — TokenShield serves `/v1/mcp/servers`, LiteLLM
+  `/v1/mcp/server`. Without this the MCP surface cannot be compared at all.
+  A differing path is printed in the report, because a reader seeing DIFFER
+  needs to know whether the two sides were even asked the same question.
+- **`Skip` with a mandatory reason.** Two auth cases are not comparable because
+  LiteLLM's key lookup needs a database this harness does not run. Deleting them
+  loses the knowledge and invites someone to re-add them and report the artefact
+  as a finding; leaving them unmarked poisons the report. They stay in the file,
+  skipped, with the cause written down. A run where *everything* skipped exits 2
+  rather than 0 — the same trap as an empty case file, which already exits 2.
+- **`BodyText` for invalid JSON.** The parse-error envelope is the first thing a
+  client SDK meets when it gets serialisation wrong, and a malformed body cannot
+  be expressed as `json.RawMessage`.
+
+Spending cases are a separate file. Nothing in `reference-cases.json` reaches a
+provider with a working credential, so the free tier can be run on any branch
+without thinking about the budget; anything that costs money is opt-in and named
+so in the case title. See `docs/REFERENCE_COMPARISON.md` for the results.

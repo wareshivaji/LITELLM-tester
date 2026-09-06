@@ -134,5 +134,12 @@ func runDiff(args []string) int {
 	if summary.Differ > 0 {
 		return 1
 	}
+	if summary.Same == 0 {
+		// Everything was skipped. Exiting 0 here would read as "the backends
+		// agree" when in fact nothing was compared — the same trap as an empty
+		// case file.
+		fmt.Fprintln(os.Stderr, "lab diff: no case was actually compared")
+		return 2
+	}
 	return 0
 }

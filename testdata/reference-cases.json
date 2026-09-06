@@ -1,0 +1,152 @@
+[
+  {
+    "Name": "models: what the key is told it can use",
+    "Method": "GET",
+    "Path": "/v1/models"
+  },
+  {
+    "Name": "chat: no Authorization at all",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Headers": {
+      "Authorization": "",
+      "x-litellm-api-key": ""
+    },
+    "Body": {
+      "model": "bedrock-claude-haiku-4.5",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ]
+    },
+    "Skip": "not comparable: LiteLLM routes missing auth through its DB-backed key lookup and 500s with no database attached (auth_exception_handler.py -> PrismaDBExceptionHandler). The 500 is this harness's setup, not LiteLLM's contract."
+  },
+  {
+    "Name": "chat: a syntactically valid but wrong key",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Headers": {
+      "Authorization": "Bearer sk-not-a-real-key-00000000",
+      "x-litellm-api-key": "sk-not-a-real-key-00000000"
+    },
+    "Body": {
+      "model": "bedrock-claude-haiku-4.5",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ]
+    },
+    "Skip": "not comparable: same cause — LiteLLM answers 400 'No connected db.' for any non-master key when run without Postgres. Restore this case only alongside a database."
+  },
+  {
+    "Name": "chat: unknown model",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": {
+      "model": "no-such-model-zzz",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "chat: no model field",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "chat: no messages field",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": {
+      "model": "bedrock-claude-haiku-4.5"
+    }
+  },
+  {
+    "Name": "chat: messages is empty",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": {
+      "model": "bedrock-claude-haiku-4.5",
+      "messages": []
+    }
+  },
+  {
+    "Name": "chat: body is not JSON",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "BodyText": "{\"model\": \"bedrock-claude-haiku-4.5\", \"messages\": ["
+  },
+  {
+    "Name": "chat: messages is a string, not an array",
+    "Method": "POST",
+    "Path": "/v1/chat/completions",
+    "Body": {
+      "model": "bedrock-claude-haiku-4.5",
+      "messages": "hi"
+    }
+  },
+  {
+    "Name": "responses: no input field",
+    "Method": "POST",
+    "Path": "/v1/responses",
+    "Body": {
+      "model": "bedrock-claude-haiku-4.5"
+    }
+  },
+  {
+    "Name": "responses: unknown model",
+    "Method": "POST",
+    "Path": "/v1/responses",
+    "Body": {
+      "model": "no-such-model-zzz",
+      "input": "hi"
+    }
+  },
+  {
+    "Name": "responses: a chat-only parameter (stop) that Responses does not define",
+    "Method": "POST",
+    "Path": "/v1/responses",
+    "Body": {
+      "model": "no-such-model-zzz",
+      "input": "hi",
+      "stop": [
+        "END"
+      ]
+    }
+  },
+  {
+    "Name": "moderations: LANDMINE-1, the flat error envelope",
+    "Method": "POST",
+    "Path": "/v1/moderations",
+    "Body": {
+      "input": "test"
+    }
+  },
+  {
+    "Name": "mcp: which servers the key can reach",
+    "Method": "GET",
+    "Path": "/v1/mcp/servers",
+    "BPath": "/v1/mcp/server"
+  },
+  {
+    "Name": "mcp: which tools the key can reach",
+    "Method": "GET",
+    "Path": "/v1/mcp/tools"
+  }
+]

@@ -37,16 +37,38 @@ type Case struct {
 	Name   string
 	Method string
 	Path   string
-	Body   json.RawMessage
-	// Headers for this case, merged over the target's.
+	// APath and BPath override Path for one target. The same endpoint does not
+	// always live at the same URL on two gateways — TokenShield serves MCP at
+	// /v1/mcp, LiteLLM at /mcp — and a comparison that cannot reach both is
+	// worth less than one that admits the paths differ.
+	APath string
+	BPath string
+	Body  json.RawMessage
+	// BodyText is sent verbatim, for a body that is not valid JSON. Malformed
+	// input is a real contract surface — the parse-error envelope is the first
+	// thing a client SDK sees when it gets serialisation wrong — and it cannot
+	// be expressed as json.RawMessage.
+	BodyText string
+	// Headers for this case, merged over the target's. An EMPTY value removes
+	// the target's header instead of sending a blank one, which is the only way
+	// to test what a gateway does with no Authorization at all.
 	Headers map[string]string
 	// Volatile paths beyond the defaults, for a case with its own instability.
 	Volatile []Volatile
+	// Skip, when set, is the reason this case cannot be compared — a difference
+	// caused by the harness's own setup rather than by either gateway. Kept in
+	// the file rather than deleted so nobody re-adds it later and reports the
+	// artefact as a finding.
+	Skip string
 }
 
 // Side is what one target answered.
 type Side struct {
-	Target  string            `json:"target"`
+	Target string `json:"target"`
+	// Path is recorded because it is not always the same on both sides. A
+	// reader seeing DIFFER needs to know whether the two targets were even
+	// asked the same URL.
+	Path    string            `json:"path"`
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    json.RawMessage   `json:"body,omitempty"`
@@ -65,6 +87,8 @@ type CaseReport struct {
 	StatusDiffers bool   `json:"statusDiffers"`
 	Body          Report `json:"body"`
 	Same          bool   `json:"same"`
+	// Skipped is the reason the case was not run, if it was not.
+	Skipped string `json:"skipped,omitempty"`
 }
 
 // Runner drives cases against two targets.
@@ -86,14 +110,18 @@ func NewRunner(a, b Target) *Runner {
 // Run sends one case to both targets and compares.
 func (r *Runner) Run(ctx context.Context, c Case) CaseReport {
 	rep := CaseReport{Case: c.Name}
-	rep.A = r.call(ctx, r.A, c)
+	if c.Skip != "" {
+		rep.Skipped = c.Skip
+		return rep
+	}
+	rep.A = r.call(ctx, r.A, c, pathFor(c.APath, c.Path))
 	if r.Pause > 0 {
 		select {
 		case <-time.After(r.Pause):
 		case <-ctx.Done():
 		}
 	}
-	rep.B = r.call(ctx, r.B, c)
+	rep.B = r.call(ctx, r.B, c, pathFor(c.BPath, c.Path))
 
 	rep.StatusDiffers = rep.A.Status != rep.B.Status
 
@@ -107,27 +135,43 @@ func (r *Runner) Run(ctx context.Context, c Case) CaseReport {
 	return rep
 }
 
-func (r *Runner) call(ctx context.Context, t Target, c Case) Side {
-	side := Side{Target: t.Name}
+// pathFor lets one target use a different URL for the same logical endpoint.
+func pathFor(override, fallback string) string {
+	if override != "" {
+		return override
+	}
+	return fallback
+}
+
+func (r *Runner) call(ctx context.Context, t Target, c Case, path string) Side {
+	side := Side{Target: t.Name, Path: path}
 	start := time.Now()
 	defer func() { side.Ms = float64(time.Since(start).Microseconds()) / 1000 }()
 
 	var body io.Reader
+	raw := []byte(c.BodyText)
 	if len(c.Body) > 0 {
-		body = bytes.NewReader(c.Body)
+		raw = c.Body
 	}
-	req, err := http.NewRequestWithContext(ctx, c.Method, strings.TrimRight(t.BaseURL, "/")+c.Path, body)
+	if len(raw) > 0 {
+		body = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, c.Method, strings.TrimRight(t.BaseURL, "/")+path, body)
 	if err != nil {
 		side.Error = err.Error()
 		return side
 	}
-	if len(c.Body) > 0 {
+	if len(raw) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	for k, v := range t.Headers {
 		req.Header.Set(k, v)
 	}
 	for k, v := range c.Headers {
+		if v == "" {
+			req.Header.Del(k)
+			continue
+		}
 		req.Header.Set(k, v)
 	}
 
@@ -162,6 +206,7 @@ type Summary struct {
 	Reports []CaseReport `json:"reports"`
 	Same    int          `json:"same"`
 	Differ  int          `json:"differ"`
+	Skipped int          `json:"skipped"`
 }
 
 // RunAll runs every case in order.
@@ -170,6 +215,10 @@ func (r *Runner) RunAll(ctx context.Context, cases []Case) Summary {
 	for _, c := range cases {
 		rep := r.Run(ctx, c)
 		s.Reports = append(s.Reports, rep)
+		if rep.Skipped != "" {
+			s.Skipped++
+			continue
+		}
 		if rep.Same {
 			s.Same++
 		} else {
@@ -186,11 +235,19 @@ func (r *Runner) RunAll(ctx context.Context, cases []Case) Summary {
 func (s Summary) Text() string {
 	var b strings.Builder
 	for _, rep := range s.Reports {
+		if rep.Skipped != "" {
+			fmt.Fprintf(&b, "  skip    %s\n            %s\n", rep.Case, rep.Skipped)
+			continue
+		}
 		if rep.Same {
 			fmt.Fprintf(&b, "  same    %s\n", rep.Case)
 			continue
 		}
 		fmt.Fprintf(&b, "  DIFFER  %s\n", rep.Case)
+		if rep.A.Path != rep.B.Path {
+			fmt.Fprintf(&b, "            path:   %s=%s %s=%s\n",
+				rep.A.Target, rep.A.Path, rep.B.Target, rep.B.Path)
+		}
 		if rep.A.Error != "" {
 			fmt.Fprintf(&b, "            %s: %s\n", rep.A.Target, rep.A.Error)
 		}
@@ -208,7 +265,11 @@ func (s Summary) Text() string {
 			fmt.Fprintf(&b, "            … and %d more\n", rep.Body.Total-len(rep.Body.Differences))
 		}
 	}
-	fmt.Fprintf(&b, "\n  %d same, %d differ\n", s.Same, s.Differ)
+	fmt.Fprintf(&b, "\n  %d same, %d differ", s.Same, s.Differ)
+	if s.Skipped > 0 {
+		fmt.Fprintf(&b, ", %d not comparable", s.Skipped)
+	}
+	fmt.Fprintln(&b)
 	if s.Differ == 0 && s.Same > 0 {
 		fmt.Fprintf(&b, "  Every case agreed. For a migration that means the endpoint is safe to switch over.\n")
 	}
