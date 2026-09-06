@@ -1,0 +1,250 @@
+[
+  {
+    "name": "one frame",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "{\"a\":1}",
+        "parsed": {
+          "a": 1
+        }
+      }
+    ]
+  },
+  {
+    "name": "three frames in one read",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "1"
+      },
+      {
+        "seq": 1,
+        "t": 10,
+        "raw": "2"
+      },
+      {
+        "seq": 2,
+        "t": 10,
+        "raw": "3"
+      }
+    ]
+  },
+  {
+    "name": "split across reads",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 20,
+        "raw": "{\"a\":1}",
+        "parsed": {
+          "a": 1
+        }
+      }
+    ]
+  },
+  {
+    "name": "nothing emitted before the blank line",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 20,
+        "raw": "{\"a\":1}",
+        "parsed": {
+          "a": 1
+        },
+        "incomplete": true
+      }
+    ]
+  },
+  {
+    "name": "CRLF frame",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "{\"a\":1}",
+        "parsed": {
+          "a": 1
+        }
+      }
+    ]
+  },
+  {
+    "name": "multi-line data joined",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "line1\nline2"
+      }
+    ]
+  },
+  {
+    "name": "event name captured",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "{}",
+        "event": "ping",
+        "parsed": {}
+      }
+    ]
+  },
+  {
+    "name": "comment flagged",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "keep-alive",
+        "comment": true
+      }
+    ]
+  },
+  {
+    "name": "DONE sentinel",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "[DONE]",
+        "done": true
+      }
+    ]
+  },
+  {
+    "name": "malformed JSON kept unparsed",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "{broken"
+      }
+    ]
+  },
+  {
+    "name": "non-JSON payload not parsed",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "hello world"
+      }
+    ]
+  },
+  {
+    "name": "array payload parsed",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "[1,2]",
+        "parsed": [
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "name": "blank frames skipped",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "1"
+      }
+    ]
+  },
+  {
+    "name": "leading space after colon is delimiter",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": " two spaces"
+      }
+    ]
+  },
+  {
+    "name": "no colon at all",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": ""
+      }
+    ]
+  },
+  {
+    "name": "trailing partial frame on flush",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "{\"a\":1}",
+        "parsed": {
+          "a": 1
+        }
+      },
+      {
+        "seq": 1,
+        "t": 20,
+        "raw": "partial",
+        "incomplete": true
+      }
+    ]
+  },
+  {
+    "name": "sequence numbers increment",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "1"
+      },
+      {
+        "seq": 1,
+        "t": 20,
+        "raw": "2"
+      },
+      {
+        "seq": 2,
+        "t": 30,
+        "raw": "3"
+      }
+    ]
+  },
+  {
+    "name": "mixed event and data and comment",
+    "frames": [
+      {
+        "seq": 0,
+        "t": 10,
+        "raw": "hb",
+        "comment": true
+      },
+      {
+        "seq": 1,
+        "t": 10,
+        "raw": "{\"n\":1}",
+        "event": "x",
+        "parsed": {
+          "n": 1
+        }
+      }
+    ]
+  },
+  {
+    "name": "empty stream",
+    "frames": []
+  },
+  {
+    "name": "only whitespace",
+    "frames": []
+  }
+]

@@ -30,7 +30,8 @@
     "vet:go": "go -C go vet ./...",
     "build:go": "go -C go build -o ../bin/lab ./cmd/lab",
     "golden": "node scripts/gen-golden.mjs",
-    "golden:check": "npm run build:client && node scripts/gen-golden.mjs --check"
+    "golden:check": "npm run build:client && node scripts/gen-golden.mjs --check",
+    "check:drift": "npm run build:go && bin/lab check"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

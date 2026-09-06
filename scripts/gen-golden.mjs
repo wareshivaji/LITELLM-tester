@@ -19,7 +19,14 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { classify, detectEnvelope, normalizeError, serverSlug, wireNameFor } from '../packages/client/dist/index.js';
+import {
+  classify,
+  detectEnvelope,
+  normalizeError,
+  serverSlug,
+  SSEParser,
+  wireNameFor,
+} from '../packages/client/dist/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -63,11 +70,30 @@ const wireGolden = wireCases.map((c) => ({
   wire: wireNameFor(c.serverName, c.toolName, { slugIsAmbiguous: c.slugIsAmbiguous === true }),
 }));
 
+// ── SSE ─────────────────────────────────────────────────────────────────────
+// Text pushes rather than bytes: the multi-byte-split case is covered by a
+// dedicated Go test, because expressing raw bytes in a JSON fixture would make
+// the fixture unreadable for no gain.
+
+const sseCases = load('sse-cases.json');
+const sseGolden = sseCases.map((c) => {
+  const parser = new SSEParser();
+  const frames = [];
+  let t = 0;
+  for (const push of c.pushes) {
+    t += 10;
+    frames.push(...parser.pushText(push, t));
+  }
+  frames.push(...parser.flush(t + 10));
+  return { name: c.name, frames };
+});
+
 // ── write or compare ────────────────────────────────────────────────────────
 
 const outputs = [
   ['classify-golden.json', classifyGolden],
   ['wire-golden.json', wireGolden],
+  ['sse-golden.json', sseGolden],
 ];
 
 let stale = 0;
