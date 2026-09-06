@@ -1,3 +1,9 @@
+> **ABANDONED 2026-09-06.** This plan is kept for the record, not as work to do.
+> G0–G3 were executed; G4 and ideas 2.2–2.8 will not be. The migration
+> re-implemented working TypeScript for a loopback tool with no scaling
+> pressure, and the parts worth keeping (`lab diff`, `lab check`) survive as a
+> CLI. See AD-32 in ARCHITECTURE.md for the reasoning.
+
 # Plan — Go backend, React frontend, and what to build next
 
 **Status: proposed. Nothing here is started.**

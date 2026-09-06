@@ -60,23 +60,25 @@ var GatewayFacts = []SourceFact{
 		Pattern: regexp.MustCompile(`name\s*:?=\s*capName\(ns\s*\+\s*"([^"]+)"\s*\+\s*tool\)`),
 		Want:    "__",
 		Why: "The wire name is the only name the model sees and the only one a forced-call test can use. " +
-			"WireName() joins with this exact string; a change silently breaks every derived name shown on Connect.",
+			"wireNameFor() in packages/client/src/mcp.ts joins with this exact string; a change silently breaks " +
+			"every derived name shown on Connect.",
 	},
 	{
 		Name:    "wire-name length cap",
 		File:    filepath.Join("internal", "mcp", "loop.go"),
 		Pattern: regexp.MustCompile(`maxToolNameLen\s*=\s*(\d+)`),
 		Want:    "64",
-		Why: "Past this the gateway truncates and appends a digest we cannot derive. WireName() reports " +
-			"'not derivable' at exactly this length; if the cap moves, it starts either lying or over-refusing.",
+		Why: "Past this the gateway truncates and appends a digest we cannot derive. wireNameFor() in " +
+			"packages/client/src/mcp.ts reports 'not derivable' at exactly this length; if the cap moves, " +
+			"it starts either lying or over-refusing.",
 	},
 	{
 		Name:    "tool-name sanitiser",
 		File:    filepath.Join("internal", "mcp", "loop.go"),
 		Pattern: regexp.MustCompile(`toolNameSanitizer\s*=\s*regexp\.MustCompile\(` + "`" + `([^` + "`" + `]+)` + "`" + `\)`),
 		Want:    `[^a-zA-Z0-9_-]`,
-		Why: "WireName() replaces characters outside this class with underscores. A wider class here means " +
-			"derived names diverge from what the model was actually offered.",
+		Why: "wireNameFor() in packages/client/src/mcp.ts replaces characters outside this class with " +
+			"underscores. A wider class here means derived names diverge from what the model was offered.",
 	},
 }
 

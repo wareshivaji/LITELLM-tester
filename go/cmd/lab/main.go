@@ -1,66 +1,53 @@
-// Command lab is the Go front door for the TokenShield client lab.
+// Command lab is a two-command CLI for the TokenShield client lab.
 //
-// It serves the endpoints already migrated to Go and proxies the rest to the
-// Node backend. See package lab for why the migration works this way.
+//	lab check                 verify the gateway facts transcribed into this repo
+//	lab diff  -cases f.json   send the same requests to two backends and diff them
 //
-// Usage:
+// It is deliberately NOT a server. An earlier plan migrated the lab's Node
+// backend to Go for "future scaling"; that was abandoned once it was clear the
+// lab is a loopback tool on one machine and the migration bought nothing a
+// customer would ever see. The Node/TypeScript backend serves the app.
 //
-//	lab                                  # :8787, proxying to :8789
-//	lab -addr 127.0.0.1:8787 -upstream http://127.0.0.1:8789
-//	lab check                            # CI: verify transcribed gateway facts
-//	lab diff  -cases f.json              # send the same requests to two backends and diff
+// What survived is the part with no TypeScript equivalent: a differ that sends
+// one request to two gateways and reports where they disagree, and a check that
+// catches gateway facts transcribed into this repo drifting from the gateway's
+// own source. Both are CLI-shaped and neither belongs in the web app.
 package main
 
 import (
-	"flag"
-	"log/slog"
+	"fmt"
 	"os"
-	"time"
-
-	"github.com/cloudgov/tokenshield-lab/internal/lab"
 )
 
 // version is stamped at build time with -ldflags, and is only cosmetic.
 var version = "0.1.0-dev"
 
+func usage() {
+	fmt.Fprintf(os.Stderr, `lab %s — TokenShield client lab CLI
+
+  lab check [-gateway PATH]     verify transcribed gateway facts against source
+  lab diff  -cases FILE [...]   send the same requests to two backends and diff
+
+Run a subcommand with -h for its flags.
+`, version)
+}
+
 func main() {
-	// Subcommands before flags: `lab check` is the CI entry point and must not
-	// need the serve flags to be valid.
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "check":
-			os.Exit(runCheck(os.Args[2:]))
-		case "diff":
-			os.Exit(runDiff(os.Args[2:]))
-		}
+	if len(os.Args) < 2 {
+		usage()
+		os.Exit(2)
 	}
-
-	// Loopback by default and in practice always: this fronts a console
-	// holding live gateway credentials with no authentication of its own.
-	// Making the bind address a flag rather than a constant is a convenience
-	// for tests, not an invitation to expose it.
-	addr := flag.String("addr", "127.0.0.1:8787", "address to listen on (loopback only)")
-	upstream := flag.String("upstream", "http://127.0.0.1:8789", "the Node backend serving unmigrated endpoints")
-	flag.Parse()
-
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	server, err := lab.New(lab.Options{
-		Addr:     *addr,
-		Upstream: *upstream,
-		Version:  version,
-		Started:  time.Now(),
-		Log:      log,
-	})
-	if err != nil {
-		log.Error("startup failed", "err", err)
-		os.Exit(1)
-	}
-
-	if err := server.Listen(); err != nil {
-		// A bind failure is the common case here and usually means an old
-		// process still holds the port. Saying so beats a bare error.
-		log.Error("server stopped", "err", err)
-		os.Exit(1)
+	switch os.Args[1] {
+	case "check":
+		os.Exit(runCheck(os.Args[2:]))
+	case "diff":
+		os.Exit(runDiff(os.Args[2:]))
+	case "-h", "--help", "help":
+		usage()
+		os.Exit(0)
+	default:
+		fmt.Fprintf(os.Stderr, "lab: unknown command %q\n\n", os.Args[1])
+		usage()
+		os.Exit(2)
 	}
 }

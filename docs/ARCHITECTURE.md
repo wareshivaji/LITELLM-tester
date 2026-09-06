@@ -648,3 +648,34 @@ Spending cases are a separate file. Nothing in `reference-cases.json` reaches a
 provider with a working credential, so the free tier can be run on any branch
 without thinking about the budget; anything that costs money is opt-in and named
 so in the case title. See `docs/REFERENCE_COMPARISON.md` for the results.
+
+### AD-32 · The Go backend migration is abandoned; the CLI parts of it are kept
+
+AD-27..AD-31 planned and executed a migration of the lab's Node backend to Go
+"for future scaling". That was the wrong call and it is reversed here.
+
+The reason it was wrong: this lab is a loopback tool that runs on one machine
+for one person at a time. There is no scaling pressure to relieve. The migration
+produced ~1,400 lines of Go that re-implemented working TypeScript — an SSE
+parser, stream analysis, error classification — plus a reverse proxy whose only
+job was to front Node while the port continued. None of it changed anything a
+customer of this SDK would see, and the SDK is the point.
+
+Deleted: `internal/sse`, `internal/transport`, `internal/lab`, and the classify
+and wire ports in `internal/contract`, together with the golden-file
+cross-checking that existed only to prove those ports matched their TypeScript
+originals before a switch-over that will now never happen.
+
+Kept, because neither has a TypeScript equivalent and both are CLI-shaped:
+
+- **`lab diff`** — one request, two gateways, a report of where they disagree.
+  This is what the reference comparison against LiteLLM runs on.
+- **`lab check`** — catches gateway facts transcribed into this repo drifting
+  from the gateway's own source. Its `Why` strings now point at
+  `packages/client/src/mcp.ts`, which is the only implementation left.
+
+The lesson worth keeping is about what to be suspicious of. Every step of the
+migration was individually reasonable and individually approved, and the whole
+was still a detour: the work was on the measuring instrument rather than the
+measurement. A plan that never produces a customer-visible change over several
+sessions is the signal, regardless of how sound each step looks.
