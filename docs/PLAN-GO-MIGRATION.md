@@ -87,7 +87,7 @@ for SDKs — reused on ourselves.
 | **G0** | Scaffold and seam | **DONE** — see below | low |
 | **G1** | Contract modules | **DONE, premise corrected** — see below | low |
 | **G2** | Transport + streaming | **DONE** — SSE parser + transport, all four fixes tested | **high** |
-| **G3** | Orchestration | **NOT DONE** — see below. ~4,900 lines, and the oracle does not reach it | medium |
+| **G3** | Orchestration | **STARTED** — the diff harness is the gate and it is built. No endpoint ported yet | medium |
 | **G4** | Retire Node | **HALF DONE** — `lab check` CI mode and single binary shipped; retiring Node waits on G3 | low |
 
 ### G0 as built, and one deviation
@@ -177,7 +177,46 @@ the TypeScript gives `1`, and the **test** was wrong. Comparing the two also
 exposed a real divergence on negatives that would never have been noticed by
 reading.
 
-### G3 — not done, and why
+### G3 — the gate is built
+
+The reason G3 was not started was that the golden oracle does not reach
+orchestration: sequences of calls with decisions between them are not
+expressible as fixtures. So the first thing built is the thing that replaces the
+oracle — **send the same request to both backends and diff**.
+
+`lab diff` is the migration gate. An endpoint moves to Go only when this exits
+0. Proven end to end against both live backends: the six proxied endpoints
+reported `same`, and `/api/health` correctly reported DIFFER, naming the exact
+path (`backends: only in A`), because Go merges that one. Exit 1, so CI blocks.
+
+**The dangerous part is the volatility list**, and it is treated that way. Two
+runs are never byte-identical — ids are UUIDs, timings move — so a naive
+comparison reports every run as different and is worth nothing. But every entry
+on that list is a difference deliberately hidden, and one careless wildcard hides
+the defect you were looking for. So each entry carries a reason, a test rejects
+any entry without one, a test rejects `*`, hidden paths are **reported** rather
+than silently dropped, and volatility can be switched off entirely when you
+suspect something is being hidden.
+
+Three things that are not "same" even when a naive diff would say so: a matching
+body with a different **status**; a **type** change, which breaks a typed client
+at parse time even when the values look alike; and a **transport failure**, which
+must never look like agreement just because two empty bodies compare equal —
+that is exactly how a migration gets waved through against a backend that was not
+running. An empty case file exits 2 for the same reason.
+
+**The same command is the LiteLLM comparison** — idea 2.1, the highest-value item
+in Part 2. Comparing two backends is comparing two backends, which is why the
+targets are named `A` and `B` rather than `go` and `node`:
+
+```
+lab diff -a https://gateway.cloudgov.ai -b http://127.0.0.1:4001          -a-header "Authorization: Bearer cg-ak-…"          -b-header "x-litellm-api-key: sk-1234" -cases testdata/reference-cases.json
+```
+
+**Still to do in G3:** every endpoint. The harness makes each one safe rather than
+doing any of them.
+
+### G3 — the original reasoning, kept
 
 **~4,900 lines** across preflight, scenarios, prompts, tool loops and
 governance. Two reasons it is not a "finish it in the same sitting" job:

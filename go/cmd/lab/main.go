@@ -8,6 +8,7 @@
 //	lab                                  # :8787, proxying to :8789
 //	lab -addr 127.0.0.1:8787 -upstream http://127.0.0.1:8789
 //	lab check                            # CI: verify transcribed gateway facts
+//	lab diff  -cases f.json              # send the same requests to two backends and diff
 package main
 
 import (
@@ -25,8 +26,13 @@ var version = "0.1.0-dev"
 func main() {
 	// Subcommands before flags: `lab check` is the CI entry point and must not
 	// need the serve flags to be valid.
-	if len(os.Args) > 1 && os.Args[1] == "check" {
-		os.Exit(runCheck(os.Args[2:]))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "check":
+			os.Exit(runCheck(os.Args[2:]))
+		case "diff":
+			os.Exit(runDiff(os.Args[2:]))
+		}
 	}
 
 	// Loopback by default and in practice always: this fronts a console

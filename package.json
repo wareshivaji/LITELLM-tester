@@ -31,7 +31,8 @@
     "build:go": "go -C go build -o ../bin/lab ./cmd/lab",
     "golden": "node scripts/gen-golden.mjs",
     "golden:check": "npm run build:client && node scripts/gen-golden.mjs --check",
-    "check:drift": "npm run build:go && bin/lab check"
+    "check:drift": "npm run build:go && bin/lab check",
+    "diff:migration": "npm run build:go && bin/lab diff -a http://127.0.0.1:8787 -a-name go -b http://127.0.0.1:8789 -b-name node -cases testdata/diff-cases.json"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
