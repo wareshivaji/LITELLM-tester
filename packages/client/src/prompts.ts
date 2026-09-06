@@ -286,11 +286,28 @@ export const PROMPT_CASES: readonly PromptCase[] = [
     title: 'A declared type:"mcp" block naming an unreachable server',
     why: 'The LiteLLM and OpenAI way of asking for MCP, pointed at the lab\'s own server, which is NOT a registered org server. TokenShield strips the block unconditionally and then honours it only as a filter that can narrow what the key permits — so naming something unreachable should be a 400 rather than a silent no-op. A 200 here would mean the block was quietly ignored, which is the worse outcome: a client believes it scoped the request and it did not.',
     prompt: 'Use the lab tool to check the weather in Paris.',
-    // MEASURED 2026-09-02: 403 on both surfaces, 267ms on Responses — fast
-    // enough to be pre-provider. The walkthrough documents 400 for this case,
-    // so code and doc differ; either way it is REFUSED rather than silently
-    // ignored, which is the outcome that matters. A 200 would mean the block
-    // was dropped while the client believes it scoped the request.
+    // RE-MEASURED 2026-09-06, and the 2026-09-02 reading was wrong. That 403
+    // never came from the gateway: the response was an HTML error page with
+    // `Server: awselb/2.0` and no `x-request-id`, so the AWS load balancer
+    // rejected the request for carrying `http://127.0.0.1:...` in its body —
+    // an SSRF rule — and TokenShield never saw it. The 267ms was the edge, not
+    // a pre-provider refusal.
+    //
+    // The same request with a PUBLIC server_url returns 200 and answers
+    // normally, brokering the key's own HuggingFace/MS Learn/Cloudflare tools
+    // instead of the server that was named. So the declared block is neither
+    // honoured nor refused — it is silently substituted, which is the outcome
+    // this case's own `why` calls the worst one: the client believes it scoped
+    // the request and it did not.
+    //
+    // The expectation is deliberately left as the contract rather than
+    // weakened to match. It now FAILS, and it should: a 400 is documented, a
+    // 403 would at least be honest, and 200-with-substitution is neither.
+    //
+    // CAVEAT — this case cannot be run against a remote gateway as configured.
+    // The lab supplies its own loopback mock as `server_url`, which the load
+    // balancer blocks before the gateway sees it, so a run against Prod
+    // measures the ALB. Give it a publicly reachable `mcpServerUrl` first.
     expect: { refusedWith: [400, 403] },
     maxTokens: 120,
     mcpMode: 'declared',

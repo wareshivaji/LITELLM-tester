@@ -272,13 +272,17 @@ export const SUITES: readonly Suite[] = [
         }),
         reference: 'openai',
         notImplemented:
-          'The gateway accepts the shorthand item alone but drops it once tool items follow, then reports "must start with a user message" about a request that starts with one. Workaround: the explicit message item, which the paired scenario below proves works.',
-        spends: false,
-        // The expectation states what OpenAI does, not what the gateway does.
-        // While the MCP/Responses work is unfinished this reports
-        // `not-implemented` rather than a failure; when it turns `pass`, the
-        // shorthand form is being honoured and this marker comes off.
-        expect: { status: 200, verdict: 'ok' },
+          'The gateway now ACCEPTS this request (200) but still drops the shorthand user turn, so the model answers without ever seeing the question. Re-measured 2026-09-06: the paired explicit scenario answers "The current temperature in Paris is 21C"; this one answers "I\'m ready to help! It looks like I have access to several useful tools" — same request, same model, no question in view. Workaround remains the explicit message item.',
+        // Re-measured 2026-09-06. Was 400 "must start with a user message";
+        // now 200. The refusal is gone, the drop is not, and a silent wrong
+        // answer is the worse of the two: the 400 at least told the client.
+        spends: true,
+        // `contains` is what makes this honest. The old expectation was
+        // status-only, so now that the 400 has become a 200 it would report
+        // PASS against a gateway that still drops the turn — a false green on
+        // a live defect. The tool output said 21 degrees; if the shorthand
+        // turn survived, the answer says so.
+        expect: { status: 200, verdict: 'ok', contains: '21' },
       },
       {
         id: 'responses-explicit-continuation',
@@ -286,6 +290,10 @@ export const SUITES: readonly Suite[] = [
         why: 'The other half of the pair, and the workaround. Proves the tool items are fine and the shorthand user turn is what gets dropped — without it, the failure above looks like a problem with the tool items.',
         reference: 'openai',
         surface: 'responses',
+        // Re-measured 2026-09-06: answers "The current temperature in Paris is
+        // 21C". `contains` was added here for the same reason as its pair — a
+        // status-only control proves nothing, because both forms now return
+        // 200 and only one of them answers the question.
         body: (ctx) => ({
           model: ctx.model,
           max_output_tokens: 64,
@@ -321,7 +329,7 @@ export const SUITES: readonly Suite[] = [
           ],
         }),
         spends: true,
-        expect: { status: 200, verdict: 'ok' },
+        expect: { status: 200, verdict: 'ok', contains: '21' },
       },
     ],
   },

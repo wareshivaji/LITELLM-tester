@@ -298,7 +298,17 @@ export interface McpOfferedTool {
   description?: string;
   /** Present in this gateway's output; not part of OpenAI's `Tool` type. */
   serverLabel?: string;
-  /** OpenAI declares `input_schema` REQUIRED. Absent here more often than not. */
+  /**
+   * OpenAI declares `input_schema` REQUIRED.
+   *
+   * CONFIRMED 2026-09-06 on Prod US: 7 of 7 offered tools carry none. The
+   * items hold exactly `description`, `name` and `server_label`. This is not
+   * the gateway lacking the schemas — `/v1/mcp/tools` returns them the same
+   * day, with 6 and 7 properties on the two hub tools — it drops them on the
+   * brokered path. So the model is asked to call tools whose arguments it
+   * cannot see, which is a larger problem than a field missing from a
+   * listing.
+   */
   hasInputSchema: boolean;
 }
 

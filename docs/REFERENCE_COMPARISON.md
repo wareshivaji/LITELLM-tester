@@ -212,3 +212,86 @@ Same model, same question. TokenShield's answer never addresses it. The likely
 cause is the 7 unrelated MCP tools injected alongside a `function_call`
 continuation for a different tool, but that is inference from one sample — it
 needs a controlled repeat before it is treated as established.
+
+---
+
+# Re-baselining the three stale expectations (2026-09-06)
+
+One held, one changed shape, one was never measuring what it claimed.
+
+## 1. Responses shorthand tool-continuation — the refusal is gone, the defect is not
+
+| | before | now |
+|---|---|---|
+| status | 400 "must start with a user message" | **200 `completed`** |
+| answer | — | "I'm ready to help! It looks like I have access to several useful tools" |
+
+The paired explicit-form control, sent in the same minute with the same model
+and the same tool output:
+
+> The current temperature in Paris is **21°C**
+
+So the shorthand `{role, content}` turn is **still being dropped**. The model
+never sees the question, so it introduces itself instead. The only thing that
+changed is that the gateway stopped saying so — a silent wrong answer where
+there used to be a loud refusal.
+
+The expectation was `{ status: 200, verdict: 'ok' }` with a `notImplemented`
+marker, the intent being that it would flip to `pass` once the shorthand was
+honoured. **It would have flipped today, on a gateway that still drops the
+turn** — a false green on a live defect, caused by asserting the status and
+nothing else.
+
+Both halves of the pair now assert `contains: '21'`. The tool output is the only
+thing that can distinguish "the turn survived" from "the turn was dropped", and
+a control that only checks for 200 controls for nothing now that both forms
+return 200. `spends` also corrected to `true`: it costs ~2,707 input tokens.
+
+## 2. The declared `type:"mcp"` block — the 403 was never the gateway's
+
+Recorded as *"MEASURED 2026-09-02: 403 on both surfaces, 267ms — fast enough to
+be pre-provider"*. It was not pre-provider. It was pre-*gateway*:
+
+```
+HTTP/1.1 403 Forbidden
+Server: awselb/2.0
+Content-Type: text/html
+```
+
+An HTML error page from the AWS load balancer, with no `x-request-id`. The
+request carried `http://127.0.0.1:8789/mock-mcp` in its body and was rejected by
+what is almost certainly an SSRF rule. TokenShield never saw it. The 267ms that
+read as evidence of an early refusal was the edge answering.
+
+The same request with a **public** `server_url` returns **200** and answers
+normally — brokering the key's own HuggingFace / MS Learn / Cloudflare tools
+instead of the server that was named. The declared block is neither honoured nor
+refused: it is **silently substituted**. That is the outcome this case's own
+`why` field already called the worst one.
+
+The expectation is left as `refusedWith: [400, 403]` rather than weakened to
+match. It now fails, and it should — 400 is documented, 403 would at least be
+honest, and 200-with-substitution is neither.
+
+**Structural consequence, beyond this one case.** The lab hands every
+`declared`-mode case its own loopback mock as `server_url`. Against any remote
+gateway that URL is blocked at the load balancer, so the whole `declared` group
+measures the ALB rather than TokenShield. Those cases need a publicly reachable
+`mcpServerUrl` before a Prod run of them means anything.
+
+## 3. Brokered tools carry no `input_schema` — holds exactly
+
+Confirmed on Prod US the same day. The `mcp_list_tools` item offers 7 tools and
+every one of them has exactly three keys: `description`, `name`, `server_label`.
+No schema on any. `server_label` is still the comma-joined
+`'HuggingFace,MS Learn,Cloudflare docs'` for all seven.
+
+The contrast is now measured rather than asserted: `/v1/mcp/tools` returns those
+same tools **with** their schemas — 6 properties on `hub_repo_search`, 7 on
+`hub_repo_details`. The gateway holds the schemas and drops them on the path
+where the model needs them.
+
+One thing worth not over-reading: the non-streaming item type here is `mcp_call`,
+which is OpenAI's own name. The non-standard `mcp_tool_call` recorded earlier was
+a *streaming event* name; that is a separate surface and has not been
+re-measured.
