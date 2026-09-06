@@ -141,3 +141,74 @@ They are not run yet for two reasons. They spend against the $2/month budget on
 the test key, and LiteLLM here has no provider credential — so for any case that
 succeeds on TokenShield, LiteLLM would fail at the provider and the comparison
 would show a transport difference rather than a contract one.
+
+---
+
+# Second run: the two refusal cases — and a correction
+
+## Correction: LiteLLM had Bedrock credentials all along
+
+The first write-up said LiteLLM "has no provider credential". That was wrong.
+`~/.aws/credentials` exists on this machine and boto3 finds it without being
+told, so LiteLLM answered real Bedrock calls throughout.
+
+Two consequences. Every case in `reference-cases-spend.json` is comparable, and
+the four marked not-comparable were marked on a false premise — their `Skip`
+text now says so rather than being quietly deleted. And the two sides bill to
+different places: TokenShield against the test key's $2/month budget, LiteLLM
+against the local AWS account.
+
+## Correction: both cases were predicted to be refused, and neither was
+
+They were expected to cost nothing. Both returned 200, so the run cost roughly
+$0.006 on the test key and $0.001 on the local AWS account. Small, but not the
+zero that was predicted.
+
+Both had previously been measured as refusals — 400 for the shorthand
+tool-continuation, 403 for the declared `type:"mcp"` block. Both now return
+200. That is consistent with active work on `responses.go`, and it means the
+recorded expectations for these two are stale and need re-baselining.
+
+## The finding: the key's MCP tools are injected into every request, and the
+## client pays for them
+
+| case | client sent | TokenShield input tokens | LiteLLM input tokens |
+|---|---|---|---|
+| tool-continuation | ~300-char body, one `adder` function tool | **2,700** | 651 |
+| declared mcp block | one short user message | **2,593** | 12 |
+
+The gap is the key's 7 allowed MCP tool definitions — measured at ~6,936
+characters, ~1,734 tokens — plus framing, injected into requests that did not
+ask for them. The second row is the sharper one: a 12-token request becomes
+2,593 prompt tokens, a 200× multiplier, on every call made with an MCP-enabled
+key.
+
+This is key-driven brokering behaving as designed — the key is the trigger, not
+the request. The finding is not that it happens but that it is unavoidable and
+invisible: a client cannot opt out per-request, and nothing in the response says
+why the bill is 200× the request.
+
+## The declared MCP block is not honoured, not refused — it is substituted
+
+The client declared `deepwiki`. TokenShield brokered its own key-configured
+servers instead, and the model answered by listing `huggingface__hf_whoami` and
+its siblings. So a client asking for server X silently receives servers Y and Z.
+
+That is worse than OpenAI's documented 400 and worse than the 403 measured
+earlier, because both of those tell the client something. Silent substitution
+means a client believes it is talking to the server it named.
+
+It also confirms once more that the `__` wire name is client-visible: it arrived
+in the model's own text output.
+
+## Output quality degraded on the injected-tools path
+
+Asked "what is 2+2?" through the documented tool-continuation shape:
+
+- LiteLLM: `2 + 2 = **4**`
+- TokenShield: `I see I made an error in my previous response. Let me start fresh.\n\nHello! I`
+
+Same model, same question. TokenShield's answer never addresses it. The likely
+cause is the 7 unrelated MCP tools injected alongside a `function_call`
+continuation for a different tool, but that is inference from one sample — it
+needs a controlled repeat before it is treated as established.

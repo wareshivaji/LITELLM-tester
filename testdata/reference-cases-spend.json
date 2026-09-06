@@ -35,7 +35,7 @@
         "Why": "provider build identifier"
       }
     ],
-    "Skip": "not comparable without a provider credential on LiteLLM: TokenShield succeeds, LiteLLM fails at the provider, so the diff shows a transport difference rather than a contract one. Nothing is learned."
+    "Skip": "WAS marked not-comparable on the false premise that LiteLLM had no provider credential. It does: boto3 picks up ~/.aws/credentials automatically, so LiteLLM answers Bedrock calls against the machine owner's own AWS account. This case is comparable and unrun. Note the two sides bill differently — TokenShield against the test key's $2/month budget, LiteLLM against the local AWS account."
   },
   {
     "Name": "SPEND chat: LANDMINE-3, stop as a bare string",
@@ -66,7 +66,7 @@
         "Why": "underlying model naming"
       }
     ],
-    "Skip": "not comparable without a provider credential on LiteLLM: the behaviour only appears in a successful completion. LANDMINE-3 is already established TokenShield-side by the prompt lab; a comparison adds nothing until LiteLLM can answer."
+    "Skip": "WAS marked not-comparable on the false premise that LiteLLM had no provider credential. It does: boto3 picks up ~/.aws/credentials automatically, so LiteLLM answers Bedrock calls against the machine owner's own AWS account. This case is comparable and unrun. Note the two sides bill differently — TokenShield against the test key's $2/month budget, LiteLLM against the local AWS account."
   },
   {
     "Name": "FREE responses: OpenAI's documented tool-continuation with a shorthand user turn",
@@ -166,7 +166,7 @@
         "Why": "underlying model naming"
       }
     ],
-    "Skip": "not comparable without a provider credential on LiteLLM, and the dearest case in the file (~$0.0068 of $0.0077: 7 injected tool defs plus a two-turn loop carrying a 4032-char result). The finding it re-verifies is TokenShield-only and already measured."
+    "Skip": "WAS marked not-comparable on the false premise that LiteLLM had no provider credential. It does: boto3 picks up ~/.aws/credentials automatically, so LiteLLM answers Bedrock calls against the machine owner's own AWS account. This case is comparable and unrun. Note the two sides bill differently — TokenShield against the test key's $2/month budget, LiteLLM against the local AWS account."
   },
   {
     "Name": "SPEND chat: named tool_choice — does it actually restrict?",
@@ -234,6 +234,6 @@
         "Why": "argument values vary"
       }
     ],
-    "Skip": "not comparable without a provider credential on LiteLLM: whether tool_choice restricts is only observable in a successful completion."
+    "Skip": "WAS marked not-comparable on the false premise that LiteLLM had no provider credential. It does: boto3 picks up ~/.aws/credentials automatically, so LiteLLM answers Bedrock calls against the machine owner's own AWS account. This case is comparable and unrun. Note the two sides bill differently — TokenShield against the test key's $2/month budget, LiteLLM against the local AWS account."
   }
 ]
