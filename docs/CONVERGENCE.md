@@ -1,7 +1,7 @@
 # Convergence — Python probing + TS UI
 
-**Status:** planned, not started. Nothing in Phase 0 or later has been executed.
-**Decisions:** all closed as of 2026-09-07 (§10). **Phase 0 is unblocked.**
+**Status:** **Phase 0.1 done** (2026-09-07). 0.2 is a user action — key rotation.
+**Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
 **Maintained during execution.** Every phase updates §10 Decision log and §11
@@ -117,7 +117,7 @@ Recorded because each is a gap in this repo that convergence closes for free:
 
 | ID | Problem | Severity |
 |---|---|---|
-| **BC-1** | **8 real credentials hardcoded in 12 files** of `tokenshield-compat-tests` — 6 `cg-ak-` and **2 `cg-mk-` management keys**, which mint other keys. 7 `.py` source files and 5 `.txt` result artefacts. | **critical** |
+| **BC-1** | **23 distinct credentials, not 8.** *Corrected 2026-09-07 during Phase 0.1 — the original figure came from a grep scoped to `.py`/`.txt`/`.csv` only, and a tree-wide scan found nearly three times as many.* Actual spread: **15 in `RUNBOOK.md`** (a committed doc), 10 across five `env.*` scripts (the intended credential store), 2 `cg-mk-` **management keys** in `build_management_keys_xlsx.py`, one shared production key duplicated across 6 modules as `DEV_KEY`, and one inside a generated `.xlsx`. | **critical** |
 | **BC-2** | That repo has **no git**. `git init` before scrubbing bakes BC-1 into history permanently. | **critical, sequencing** |
 | **BC-3** | Credential policy conflict. Python reads `os.environ` for keys. This repo reads `.env.local` and **deliberately never** the ambient environment. Both cannot be right. | high |
 | **BC-4** | `TS_KEY` silently **shadows** `TOKENSHIELD_API_KEY` in `chat_params_test.py`. Documented in RUNBOOK §5; already cost 2 hours of 403 debugging once. | high |
@@ -416,9 +416,9 @@ Ordered. 0.1 must precede 0.3.
 
 | Step | Action | Gate |
 |---|---|---|
-| 0.1 | Scrub the 8 real credentials from 12 files (BC-1). Source files read from config; the 5 `.txt` artefacts are masked or deleted. | `grep -rE "cg-(ak\|mk)-[A-Za-z0-9_-]{20,}"` returns nothing |
-| 0.2 | **User action:** rotate all 8 keys, both management keys first | user confirms |
-| 0.3 | `git init` + first commit + `.gitignore` (`*.txt` results, `__pycache__`, `.pytest_cache`, `out/`, xlsx) | history contains no credential |
+| 0.1 | ~~Scrub the 8 real credentials from 12 files~~ Scrub every credential from files that will be committed (BC-1, corrected to 23). Source reads named env slots via a new `_creds.py`; `RUNBOOK.md` keeps a name-only inventory; the `env.*` credential store is gitignored rather than scrubbed, because it is the store. | **restated:** no credential in any file **git would track**. A tree-wide grep returning nothing was the wrong gate — the `env.*` scripts legitimately hold keys and `env.toolgov.sh` says so in its own header; destroying them would break a working setup. | **DONE 2026-09-07** |
+| 0.2 | **User action:** rotate the exposed keys, **both `cg-mk-` management keys first** (they mint others). 15 named in the former `RUNBOOK.md` inventory — GLM Testing, SR Key1/Test2/Key3, Tool Calling Test 0/OpenAI/Anthropic/VertexAI/Azure, Vertex Key, Bedrock Test, Azure Foundry Test, Shivaji local claude code, Shivaji claude code Vertex Key, Colpal test 00 — plus whatever the 18 `TS_KEY*` env slots currently hold. | user confirms |
+| 0.3 | `git init` + first commit. *(`.gitignore` moved into 0.1 — the 0.1 gate depends on it, since "no credential in a tracked file" is only true once the credential store is excluded.)* | history contains no credential |
 | 0.4 | Merge the two findings ledgers into `FINDINGS.md`; dedupe against Python landmines; mark every entry with its source repo | one ledger, no contradictions |
 | 0.5 | Write §7 conventions into both repos as code comments, not just here | both sides agree on baseURL and credential rules |
 
@@ -541,4 +541,5 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **0.1** | **Credential scrub complete; gate passed.** Backed the un-versioned repo up first. New `_creds.py` resolves by named env slot and fails loudly with no built-in default — replacing one production key that was duplicated as `DEV_KEY` across 6 modules, three of them under a comment reading *"do not commit"*. `build_management_keys_xlsx.py`: 4 keys (2 management) became stable labels so the report keeps its meaning. 5 result `.txt` files masked. `RUNBOOK.md`: 15 key values replaced by a name-only inventory. `.gitignore` added covering the `env.*` credential store, generated `.xlsx`, and run artefacts. **BC-1 corrected 8 → 23** and the 0.1 gate restated. Verified: 40 files compile, 167 tests collect, a missing credential exits with guidance naming the variable, and no credential remains in any of the 58 files git would track. | `tokenshield-compat-tests/*` (10 files), `docs/CONVERGENCE.md` |
 | 2026-09-07 | — | D-2 and D-3 resolved; D-4/5/6 confirmed; **D-7 added** after tracing the probe's real dependency closure. §5 ownership corrected, §6.1 credential LLD replaced with the alias-slot rule, §6.3 probe-boundary LLD added, §7 rows resolved, Phase 2.1 and 8.2 gates tightened, estimate revised 8–13 → 7–11 sessions. Still no code changed. | `docs/CONVERGENCE.md` |
