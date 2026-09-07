@@ -1,0 +1,472 @@
+# Convergence — Python probing + TS UI
+
+**Status:** planned, not started. Nothing in Phase 0 or later has been executed.
+**Governs two repos:** `tokenshield-client-sdk` (this one) and
+`tokenshield-compat-tests`.
+**Maintained during execution.** Every phase updates §10 Decision log and §11
+Change log. A phase is not done until this file reflects it.
+
+---
+
+## 1. Why
+
+Two independent efforts probe the same gateway today. Neither knows about the
+other, and they have already re-derived each other's work — the MCP manual test
+cases written in this repo duplicate `TOOL_GOVERNANCE_TEST_PLAN.md` Groups A–D
+almost case for case.
+
+The target is one probing engine in Python, one UI in TypeScript, one findings
+ledger. Python is chosen because it is where the customer reality is: the
+`openai` Python SDK is the reference client, and **LiteLLM is itself a Python
+library**, so the reference comparison becomes an in-process import instead of a
+proxy on `:4001` with provider credentials that have to be guessed at.
+
+### What makes this different from the abandoned Go migration (AD-32)
+
+The shape is identical — rewrite a working layer in another language — so the
+distinction has to be explicit or the mistake repeats.
+
+| | Go migration | This |
+|---|---|---|
+| New capability | none | reference SDK, LiteLLM in-process, distributable pytest suite |
+| Layer count | 1 → 2 (added a duplicate) | 2 → 1 (absorbs an existing duplicate) |
+| Customer-visible change | none in ~6 sessions | a suite a customer can run against their own key |
+| Duplication policing | 1,100 lines of golden files | temporary, and gated by `lab diff` |
+
+**The second row is the whole argument.** It only holds if we converge *and
+retire*. Adding a Python backend while keeping both existing probing layers
+produces three, which is worse than today. §9 carries the tripwire.
+
+---
+
+## 2. Ground truth — what actually exists
+
+Measured 2026-09-07, not recalled.
+
+### 2.1 `tokenshield-client-sdk` (this repo)
+
+| Part | Lines | Contents |
+|---|---|---|
+| `packages/client` | 6,253 | 21 modules — transport, classify, scenarios, prompts, mcp, fields, probes, surfaces, tools, governance, preflight, redact, stream, sse, adapters, management, signal, curl, types, index |
+| `packages/server` | 2,169 | Fastify, **27 endpoints**, 127.0.0.1 only |
+| `packages/web` | 5,353 | React 19 + Vite 6 + Tailwind 4, **8 pages** |
+| `go` | 1,737 | `lab check` (gateway source-drift), `lab diff` (two-gateway differ) |
+
+Verified working 2026-09-07: all 8 pages render, no console errors, all six
+preflight checks pass against Prod US. 19 findings recorded in `FINDINGS.md`.
+
+Only ~1,000 of the 6,253 client lines are baseURL calling (`transport` 616,
+`client` 211, `sse` 124, `signal` 67). The rest is domain logic.
+
+### 2.2 `tokenshield-compat-tests`
+
+10,860 lines of Python. **Not a git repository.** `requirements.txt` declares
+`openai>=1.40`, `pytest>=8.0`, `requests>=2.31`, `pymongo>=4.6`.
+
+Three distinct kinds of thing live here:
+
+| Kind | Modules | Detail |
+|---|---|---|
+| **pytest suites** | 5 | ~100 test functions: `test_chat_completions.py` (33, 9 xfail), `test_keys.py` (25, 10 spend), `test_tool_calling.py` (21, 4 xfail), `responses_sdk_test.py` (13), `responses_toolgov_test.py` (8) |
+| **standalone scripts** | ~9 | `main()` + `rec(cid, title, verdict, detail)` → `.txt`. `chat_params_test.py`, `responses_test.py`, `sr_test.py`, `management_keys_test.py`, `test_tool_breaking.py`, others. **Not collected by pytest despite the name.** |
+| **report builders** | 15 | `build_*.py` read the `.txt` and emit `.xlsx` |
+
+Plus design docs that are ahead of anything in this repo:
+`TOOL_GOVERNANCE_TEST_PLAN.md` (12-key matrix, Groups A–D),
+`TOOL_GOVERNANCE_REGRESSION_DESIGN.md`, `MANAGEMENT_API_SPEC.md`,
+`RUNBOOK.md`, `colgate-poc/TEST_MATRIX.md`.
+
+### 2.3 Coverage overlap
+
+| Surface | TS lab | Python |
+|---|---|---|
+| `/v1/chat/completions` | yes | yes (3 modules) |
+| `/v1/responses` | yes | yes (3 modules) |
+| MCP servers / tools / policy | yes + **UI + wire-name derivation** | yes + **12-key governance matrix** |
+| `/v1/models` | yes (preflight) | **no suite** |
+| `/v1/moderations` | yes (LANDMINE-1) | **no suite** |
+| `/v1/embeddings` | no | yes |
+| `/v1/files` | no | yes |
+| Smart routing | no | yes |
+| Management API | partial (mint) | yes + spec + Mongo seeding |
+| Streaming analysis (gaps, timings) | **yes, unique** | partial |
+| LiteLLM reference diff | **yes, unique** | no |
+| `/v1/messages` (Claude Code) | no | no — manual plan only |
+| `/v1/completions`, `/v1/batches`, token counting | no | no |
+
+Neither side is a superset. Both have unique value.
+
+### 2.4 Things Python already does better
+
+Recorded because each is a gap in this repo that convergence closes for free:
+
+- **`strict=True` xfail.** A landmine that gets fixed becomes XPASS and *fails
+  the build*. This repo hit exactly the opposite failure on 2026-09-06: a
+  status-only expectation would have gone green while the defect persisted.
+- **Custom request headers.** `headers(api_key, extra=...)` already supports
+  `x-mcp-servers`, which is the entire test group this repo lists as blocked.
+- **Spend gating** via `TS_ALLOW_SPEND=1` and a `spend` marker, rather than
+  ad-hoc judgement per run.
+- **Mongo key seeding** (`seed_key.py`) using the gateway's own SHA-256 hashing,
+  so scoped fixture keys exist without the Java control plane.
+- **Shared vocabulary already.** LANDMINE-3 means the same thing in both repos,
+  and the Python side cites gateway source (`provider.go:67`).
+
+### 2.5 Blocking problems found during the check
+
+| ID | Problem | Severity |
+|---|---|---|
+| **BC-1** | **8 real credentials hardcoded in 12 files** of `tokenshield-compat-tests` — 6 `cg-ak-` and **2 `cg-mk-` management keys**, which mint other keys. 7 `.py` source files and 5 `.txt` result artefacts. | **critical** |
+| **BC-2** | That repo has **no git**. `git init` before scrubbing bakes BC-1 into history permanently. | **critical, sequencing** |
+| **BC-3** | Credential policy conflict. Python reads `os.environ` for keys. This repo reads `.env.local` and **deliberately never** the ambient environment. Both cannot be right. | high |
+| **BC-4** | `TS_KEY` silently **shadows** `TOKENSHIELD_API_KEY` in `chat_params_test.py`. Documented in RUNBOOK §5; already cost 2 hours of 403 debugging once. | high |
+| **BC-5** | Base URL convention conflict. Python `TOKENSHIELD_BASE_URL` **includes** `/v1`; this repo's profiles exclude it. | medium |
+| **BC-6** | `pymongo` gives the Python side direct Mongo access. The standing constraint is that the SDK stores nothing in a database. Reading and seeding fixtures is not storing, but the boundary must be written down. | medium |
+| **BC-7** | Two default model matrices: Python defaults to GLM, this repo to `bedrock-claude-haiku-4.5`. | low |
+| **BC-8** | `TOOL_OUT` / `CHAT_OUT` are **truncated every run**, so a run silently destroys the previous evidence. | low |
+
+---
+
+## 3. Current architecture (HLD)
+
+```mermaid
+flowchart TB
+  subgraph R1["tokenshield-client-sdk (git)"]
+    WEB["React UI · 8 pages<br/>5,353 lines"]
+    NODE["Fastify · 27 endpoints<br/>2,169 lines"]
+    TSC["@tokenshield/client<br/>6,253 lines · 21 modules"]
+    GO["go/ · lab check + lab diff<br/>1,737 lines"]
+    WEB -->|"/api/* · vite proxy"| NODE
+    NODE --> TSC
+  end
+
+  subgraph R2["tokenshield-compat-tests (NO git)"]
+    PYT["pytest · ~100 tests<br/>5 modules"]
+    PYS["scripts · ~9 modules<br/>rec() to .txt"]
+    PYB["build_*.py · 15<br/>.txt to .xlsx"]
+    PYS --> PYB
+  end
+
+  GW["TokenShield gateway"]
+  LL["LiteLLM proxy :4001<br/>started by hand"]
+
+  TSC --> GW
+  PYT --> GW
+  PYS --> GW
+  GO -.->|"reference diff"| LL
+  LL --> GW
+
+  classDef dup fill:#7f1d1d,stroke:#ef4444,color:#fff
+  class TSC,PYT,PYS dup
+```
+
+Red boxes all probe the same gateway. That is the duplication.
+
+---
+
+## 4. Target architecture (HLD)
+
+```mermaid
+flowchart TB
+  subgraph R1["tokenshield-client-sdk (git)"]
+    WEB["React UI · 8 pages<br/>UNCHANGED"]
+    ADPT["node-sdk-probe<br/>JS vendor SDKs ONLY"]
+    GO["go/ · lab check + lab diff<br/>UNCHANGED"]
+  end
+
+  subgraph R2["tokenshield-compat-tests (git, scrubbed)"]
+    API["FastAPI · same 27 endpoints"]
+    ENG["probe engine<br/>transport · classify · redact · mcp"]
+    PYT["pytest suites<br/>~100 tests + governance matrix"]
+    CASES[("cases/*.json<br/>single source of truth")]
+    API --> ENG
+    PYT --> ENG
+    ENG --> CASES
+    API --> CASES
+  end
+
+  GW["TokenShield gateway"]
+  LLIB["litellm<br/>imported IN-PROCESS"]
+
+  WEB -->|"/api/* · same contract"| API
+  WEB -->|"JS-SDK cases only"| ADPT
+  ADPT --> GW
+  ENG --> GW
+  ENG --> LLIB
+  LLIB --> GW
+  GO -.->|"migration gate"| API
+
+  classDef keep fill:#064e3b,stroke:#10b981,color:#fff
+  class ENG,CASES,API keep
+```
+
+Three things to notice:
+
+1. **The UI's contract does not change.** Same 27 endpoints, same shapes. The UI
+   is not part of this migration.
+2. **Node keeps exactly one job** — running the JS vendor SDKs (`openai`,
+   `@anthropic-ai/sdk`). That is coverage, not duplication: customers use both
+   the JS and Python SDKs, so both are real signals.
+3. **LiteLLM is imported, not proxied.** No `:4001`, no provider-credential
+   ambiguity of the kind that made two cases uncomparable on 2026-09-06.
+
+---
+
+## 5. Component ownership — moves, stays, dies
+
+| Component | Lines | Fate | Why |
+|---|---|---|---|
+| `transport.ts` | 616 | **moves** | the baseURL layer; Python has it partly in `_util.py` |
+| `sse.ts` | 124 | **moves** | Python `parse_responses_sse` already exists |
+| `classify.ts` | 193 | **moves** | verdict logic belongs with the engine |
+| `redact.ts` | 195 | **moves, single implementation** | two key-masking implementations is the one bug class that leaks credentials |
+| `mcp.ts` | 766 | **moves**, merge with `_toolgov.py` | biggest single merge; wire-name derivation is unique to this repo and must survive |
+| `scenarios.ts` | 646 | **becomes data** (Phase 1) | closures cannot cross languages |
+| `prompts.ts` | 692 | **becomes data** (Phase 1) | same |
+| `fields.ts` | 272 | **becomes data** | already a table transcribed from LiteLLM source |
+| `probes.ts`, `surfaces.ts`, `governance.ts`, `preflight.ts`, `tools.ts`, `management.ts`, `signal.ts`, `stream.ts` | 1,796 | **moves** | engine logic |
+| `adapters.ts` | 312 | **stays in Node** | imports the real `openai` / `@anthropic-ai/sdk` npm packages. No Python path to the JS SDKs. |
+| `types.ts` | 244 | **splits** | wire types generated from a shared schema; UI view types stay TS |
+| `curl.ts` | 43 | **moves** | trivial |
+| `packages/web` | 5,353 | **stays, untouched** | |
+| `go/` | 1,737 | **stays, untouched** | `lab diff` is the migration gate |
+| Python `build_*.py` (15) | — | **stays**, later fed by the engine | xlsx reporting is a real deliverable |
+| Python scripts (~9) | — | **converge** into the engine + pytest | they duplicate what `/api/scenarios/run` does |
+
+---
+
+## 6. LLD — request path
+
+What one probe looks like after convergence. The `Exchange` record is the
+contract between engine and UI and must survive the move byte-compatible, or the
+UI's exchange log breaks.
+
+```mermaid
+sequenceDiagram
+  participant UI as React UI
+  participant API as FastAPI
+  participant CFG as config
+  participant RED as redact
+  participant TR as transport
+  participant GW as gateway
+
+  UI->>API: POST /api/exchange {profile, key, surface, body}
+  API->>CFG: resolve(profile, key)
+  Note over CFG: .env.local ONLY.<br/>Ambient env is never a credential source (BC-3)
+  CFG-->>API: baseURL + secret
+  API->>RED: redactBody(request)
+  RED-->>API: safe copy for the record
+  API->>TR: send(baseURL + path, body, headers)
+  TR->>GW: HTTP
+  GW-->>TR: status, headers, body
+  TR-->>API: raw
+  API->>API: classify(status, envelope) -> verdict
+  API->>RED: redact(response, headers)
+  API-->>UI: Exchange {request*, response*, verdict, timings}
+  Note over API,UI: *redacted. A secret must never reach the UI or a log.
+```
+
+## 6.1 LLD — credential resolution (resolves BC-3, BC-4)
+
+The single most dangerous divergence between the two repos. This is the rule the
+merged engine must implement.
+
+```mermaid
+flowchart TD
+  START(["a probe needs a credential"]) --> EXPL{"passed explicitly<br/>in the API call?"}
+  EXPL -->|yes| USE["use it"]
+  EXPL -->|no| ALIAS{"alias names a key<br/>in .env.local?"}
+  ALIAS -->|yes| USE
+  ALIAS -->|no| FAIL["FAIL LOUDLY<br/>never fall back to ambient env"]
+
+  AMB["ambient os.environ<br/>TOKENSHIELD_API_KEY, TS_KEY"] -.->|"REMOVED — BC-3, BC-4"| FAIL
+
+  USE --> NEVER["never logged, never returned,<br/>never in an xlsx or .txt"]
+
+  classDef bad fill:#7f1d1d,stroke:#ef4444,color:#fff
+  class AMB,FAIL bad
+```
+
+**Decision required from the user (§10, D-2):** the Python suite is run from a
+terminal by a person today, and `export TOKENSHIELD_API_KEY=...` is how they run
+it. Removing ambient reading outright breaks that habit. Proposed compromise:
+ambient env is allowed **only** when a `--allow-ambient-key` flag or
+`TS_ALLOW_AMBIENT=1` is set, it is logged loudly at startup, and `TS_KEY` is
+deleted entirely so nothing can silently shadow anything (BC-4).
+
+## 6.2 LLD — cases as data (Phase 1)
+
+```mermaid
+flowchart LR
+  subgraph BEFORE
+    A1["scenarios.ts<br/>body: (ctx) => ({...})"]
+    A2["prompts.ts<br/>closures"]
+    A3["_toolgov.py<br/>Python dicts"]
+  end
+
+  subgraph AFTER
+    C[("cases/*.json<br/>+ JSON Schema")]
+    B1["TS: renders + type-checks"]
+    B2["Python: executes"]
+    B3["pytest: parametrizes"]
+    C --> B1
+    C --> B2
+    C --> B3
+  end
+
+  A1 --> C
+  A2 --> C
+  A3 --> C
+```
+
+Bodies become JSON with a small template vocabulary (`{{model}}`,
+`{{embedModel}}`) instead of arbitrary closures. Anything that genuinely needs
+code becomes a named generator both sides implement — kept to as few as
+possible, and every one listed in §11 when added.
+
+---
+
+## 7. Conventions to reconcile before any code moves
+
+| # | Conflict | Resolution |
+|---|---|---|
+| 1 | baseURL includes `/v1` (Python) vs excludes it (TS) — BC-5 | **excludes.** Profiles name a gateway, not a surface; `/v1/...` is part of the path. Python's `BASE_URL` gets a one-line shim. |
+| 2 | Credential source — BC-3, BC-4 | §6.1, pending D-2. `TS_KEY` deleted regardless. |
+| 3 | Default model matrix — BC-7 | one default per repo is fine; the **case files** must never hardcode a model. `{{model}}` only. |
+| 4 | Findings numbering | one ledger: `FINDINGS.md` here. Python landmine numbers are authoritative where they exist (LANDMINE-1/2/3), since they cite gateway source. |
+| 5 | Result artefacts truncated per run — BC-8 | timestamped output directory; never truncate. |
+| 6 | Mongo access — BC-6 | allowed for **reading** org/key config and **seeding fixture keys** only. The lab still persists no state of its own. Written into the engine's module docstring. |
+
+---
+
+## 8. Phases
+
+Each phase has an exit gate. A phase is not done until its gate passes **and**
+§10/§11 of this file are updated.
+
+### Phase 0 — Safety and ground truth *(no migration work)*
+
+Ordered. 0.1 must precede 0.3.
+
+| Step | Action | Gate |
+|---|---|---|
+| 0.1 | Scrub the 8 real credentials from 12 files (BC-1). Source files read from config; the 5 `.txt` artefacts are masked or deleted. | `grep -rE "cg-(ak\|mk)-[A-Za-z0-9_-]{20,}"` returns nothing |
+| 0.2 | **User action:** rotate all 8 keys, both management keys first | user confirms |
+| 0.3 | `git init` + first commit + `.gitignore` (`*.txt` results, `__pycache__`, `.pytest_cache`, `out/`, xlsx) | history contains no credential |
+| 0.4 | Merge the two findings ledgers into `FINDINGS.md`; dedupe against Python landmines; mark every entry with its source repo | one ledger, no contradictions |
+| 0.5 | Write §7 conventions into both repos as code comments, not just here | both sides agree on baseURL and credential rules |
+
+**Deliverable a person can see:** one findings list, and a version-controlled
+Python repo with no secrets in it.
+
+### Phase 1 — Cases as data
+
+| Step | Action | Gate |
+|---|---|---|
+| 1.1 | Design `cases/*.json` + JSON Schema; template vocabulary only | schema validates |
+| 1.2 | Port `scenarios.ts` (646) and `prompts.ts` (692) to case files; TS reads the files instead of closures | **all 26 TS test files still pass; UI renders the same suites** |
+| 1.3 | Python reads the same files | a case file executed both sides produces the same request body |
+
+**Gate:** `lab diff` shows `/api/scenarios/suites` and `/api/prompts/cases`
+identical before and after. Standalone value: even if we stop here, cases are
+language-neutral.
+
+### Phase 2 — Python engine skeleton
+
+| Step | Action | Gate |
+|---|---|---|
+| 2.1 | FastAPI on a second port; `config` (§6.1), `redact` (single impl), `transport`, `Exchange` | unit tests, including redaction leak tests ported from `redact.test.ts` |
+| 2.2 | `/api/health`, `/api/config` only | `lab diff -a node -b python` → 0 differences |
+
+### Phase 3 — Read-only endpoints
+
+`/api/preflight`, `/api/models`, `/api/runs`, `/api/runs/:id`,
+`/api/prompts/cases`, `/api/scenarios/suites`, `/api/mcp/browse`.
+**Gate:** `lab diff` clean on all seven; UI switched over by changing one port.
+
+### Phase 4 — The exchange path
+
+`/api/exchange`, `/api/compare`, `/api/mcp/test`, `/api/mcp/call`,
+`/api/mcp/aggregate`, `/api/tools/loop`.
+**Gate:** `lab diff` clean; spend-incurring cases run once, by hand, with the
+cost stated first.
+
+### Phase 5 — Streaming
+
+`/api/stream`, `/api/prompts/run`, `/api/scenarios/run`,
+`/api/governance/burst`. The hardest phase: SSE relay, partial UTF-8 across
+chunk boundaries, gap/timing analysis.
+**Gate:** byte-identical SSE frame sequence for a recorded fixture, plus
+`lab diff` on the terminal payload.
+
+### Phase 6 — Stateful and management
+
+`/api/targets/*`, `/api/keys/mint`, `/api/scenarios/export`,
+`/api/governance/probe-models`. Uses `MANAGEMENT_API_SPEC.md`.
+**Gate:** `lab diff` clean; `DELETE` paths tested against a disposable key.
+
+### Phase 7 — Absorb the compat suite
+
+| Step | Action | Gate |
+|---|---|---|
+| 7.1 | The ~9 standalone scripts become engine calls + pytest parametrization | same verdicts as the last recorded `.txt` run |
+| 7.2 | `build_*.py` read engine output instead of scraped `.txt` | xlsx byte-comparable on the same input |
+| 7.3 | LiteLLM in-process; retire the `:4001` proxy and `reference/litellm/config.yaml` | reference cases reproduce `docs/REFERENCE_COMPARISON.md` |
+
+### Phase 8 — Retire the Node backend
+
+| Step | Action | Gate |
+|---|---|---|
+| 8.1 | Reduce `packages/server` to the JS-SDK probe only | UI green on Python for all 27 endpoints |
+| 8.2 | Delete what the JS-SDK probe does not need from `packages/client` | typecheck, tests, eslint clean |
+| 8.3 | One `README` covering both repos and the split | a new person can run it from the README alone |
+
+**Do not start Phase 8 until Phases 3–6 have been green for a full working
+session.** Retiring the fallback is the irreversible step.
+
+---
+
+## 9. Risks and the tripwire
+
+| Risk | Mitigation |
+|---|---|
+| **Three layers instead of one** — the Go mistake, repeated | Phase 8 is mandatory, not optional. If we will not commit to Phase 8, do not start Phase 2. |
+| Redaction regresses during the move | Phase 2.1 ports the redaction tests *first*. A leak here is worse than any gateway finding. |
+| Big-bang cutover fails | every endpoint gated by `lab diff`; Node stays until Phase 8 |
+| Python environment friction | already seen: 3.14.3 against LiteLLM's `<3.15`, and a cp1252 crash on its banner. **Pin a 3.12 venv in Phase 0.** |
+| Weaker typing than TS strict | pyright strict in CI from Phase 2.1; wire types generated from the shared schema |
+| Gateway moves under us | it already does — 2 of 3 re-checked findings had changed within 4 days. Phase 0.4 marks staleness per finding. |
+| This blocks the P0 findings | it must not. The three P0s in `FINDINGS.md` are actionable now, by the gateway team, independent of every phase here. |
+
+**Tripwire.** If two consecutive working sessions produce no new capability and
+no change a person can see, stop and re-read §1. That is the signal missed
+during the Go migration — every individual step there looked reasonable.
+
+**Estimate.** 8–13 sessions: Phase 0 (1), 1 (1–2), 2 (1–2), 3–6 (3–5),
+7 (2–3), 8 (1). If that is too long, keeping the two repos separate with clear
+jobs is a legitimate answer and this plan should be declined rather than
+half-executed.
+
+---
+
+## 10. Decision log
+
+Maintained during execution. Every entry: what was decided, why, and what it
+rules out.
+
+| ID | Decision | Status |
+|---|---|---|
+| D-1 | Converge on Python probing + TS UI, rather than porting the backend to Go | **accepted** by user 2026-09-07 |
+| D-2 | Whether ambient-environment credentials are permitted at all, and behind what flag (§6.1) | **open — blocks Phase 0.5** |
+| D-3 | Whether `packages/client` is published for outside consumption, or the pytest suite is the customer artefact | **open — shapes Phase 8.2** |
+| D-4 | baseURL excludes `/v1` | proposed, §7.1 |
+| D-5 | Mongo is read/seed only; the lab persists nothing of its own | proposed, §7.6 |
+| D-6 | Node retains the JS vendor SDK probe permanently | proposed, §4 |
+
+## 11. Change log
+
+Appended as phases execute. Empty until Phase 0 begins.
+
+| Date | Phase | Change | Files |
+|---|---|---|---|
+| 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
