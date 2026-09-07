@@ -1,6 +1,7 @@
 # Convergence — Python probing + TS UI
 
 **Status:** planned, not started. Nothing in Phase 0 or later has been executed.
+**Decisions:** all closed as of 2026-09-07 (§10). **Phase 0 is unblocked.**
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
 **Maintained during execution.** Every phase updates §10 Decision log and §11
@@ -216,16 +217,17 @@ Three things to notice:
 
 | Component | Lines | Fate | Why |
 |---|---|---|---|
-| `transport.ts` | 616 | **moves** | the baseURL layer; Python has it partly in `_util.py` |
+| `transport.ts` | 616 | **moves** | the baseURL layer; Python has it partly in `_util.py`. Not kept for the probe — see D-7 |
 | `sse.ts` | 124 | **moves** | Python `parse_responses_sse` already exists |
 | `classify.ts` | 193 | **moves** | verdict logic belongs with the engine |
-| `redact.ts` | 195 | **moves, single implementation** | two key-masking implementations is the one bug class that leaks credentials |
+| `redact.ts` | 195 | **moves — Python owns it outright** | see D-7: the probe emits pre-masked records, so deep redaction exists once |
 | `mcp.ts` | 766 | **moves**, merge with `_toolgov.py` | biggest single merge; wire-name derivation is unique to this repo and must survive |
 | `scenarios.ts` | 646 | **becomes data** (Phase 1) | closures cannot cross languages |
 | `prompts.ts` | 692 | **becomes data** (Phase 1) | same |
 | `fields.ts` | 272 | **becomes data** | already a table transcribed from LiteLLM source |
 | `probes.ts`, `surfaces.ts`, `governance.ts`, `preflight.ts`, `tools.ts`, `management.ts`, `signal.ts`, `stream.ts` | 1,796 | **moves** | engine logic |
 | `adapters.ts` | 312 | **stays in Node** | imports the real `openai` / `@anthropic-ai/sdk` npm packages. No Python path to the JS SDKs. |
+| *(new)* `probe.ts` | ~150 | **new, replaces transport for the probe** | D-7: HTTP + header masking + raw JSON on stdout. Python classifies and redacts. |
 | `types.ts` | 244 | **splits** | wire types generated from a shared schema; UI view types stay TS |
 | `curl.ts` | 43 | **moves** | trivial |
 | `packages/web` | 5,353 | **stays, untouched** | |
@@ -271,28 +273,49 @@ sequenceDiagram
 The single most dangerous divergence between the two repos. This is the rule the
 merged engine must implement.
 
+**Resolved: D-2 option C — the alias-slot model.** The danger was never the
+environment; it was the *unnamed default*. `TOKENSHIELD_API_KEY` is a default:
+picked up implicitly, unattributable, single-valued, and the only reason `TS_KEY`
+can shadow anything at all. Shadowing is possible only between two variables that
+both mean "the default key". `TS_KEY_MCP_SELECTED` is a named slot and has none of
+those properties — and the governance matrix already works that way.
+
+A flag was the wrong control. A flag everyone sets is not a control, and in CI it
+would be permanently on.
+
 ```mermaid
 flowchart TD
-  START(["a probe needs a credential"]) --> EXPL{"passed explicitly<br/>in the API call?"}
+  START(["a probe needs a credential"]) --> EXPL{"named explicitly<br/>in the API call?"}
   EXPL -->|yes| USE["use it"]
-  EXPL -->|no| ALIAS{"alias names a key<br/>in .env.local?"}
+  EXPL -->|no| ALIAS{"alias set in<br/>.env.local?"}
   ALIAS -->|yes| USE
-  ALIAS -->|no| FAIL["FAIL LOUDLY<br/>never fall back to ambient env"]
+  ALIAS -->|no| ENVSLOT{"alias set as<br/>TSLAB_KEY_ALIAS<br/>in the environment?"}
+  ENVSLOT -->|yes| USE
+  ENVSLOT -->|no| FAIL["FAIL LOUDLY<br/>naming which alias was wanted"]
 
-  AMB["ambient os.environ<br/>TOKENSHIELD_API_KEY, TS_KEY"] -.->|"REMOVED — BC-3, BC-4"| FAIL
+  BARE["bare defaults:<br/>TOKENSHIELD_API_KEY, TS_KEY"] -.->|"DELETED as concepts<br/>BC-3, BC-4"| FAIL
 
-  USE --> NEVER["never logged, never returned,<br/>never in an xlsx or .txt"]
+  USE --> REC["the alias is recorded on the Exchange"]
+  REC --> NEVER["the secret is never logged, returned,<br/>or written to a .txt or .xlsx"]
 
   classDef bad fill:#7f1d1d,stroke:#ef4444,color:#fff
-  class AMB,FAIL bad
+  class BARE,FAIL bad
 ```
 
-**Decision required from the user (§10, D-2):** the Python suite is run from a
-terminal by a person today, and `export TOKENSHIELD_API_KEY=...` is how they run
-it. Removing ambient reading outright breaks that habit. Proposed compromise:
-ambient env is allowed **only** when a `--allow-ambient-key` flag or
-`TS_ALLOW_AMBIENT=1` is set, it is logged loudly at startup, and `TS_KEY` is
-deleted entirely so nothing can silently shadow anything (BC-4).
+Why this satisfies both consumption models:
+
+| Property | Needed by | Satisfied because |
+|---|---|---|
+| attributable — a finding names its key | this repo | the alias is on the `Exchange`, not "whatever was exported" |
+| many keys at once | this repo, and the 12-key matrix | one slot per alias, in either source |
+| no silent prod run | both | there is no bare default to pick up |
+| `pytest` idiom | Python suite | `TSLAB_KEY_FOO=... pytest` still works |
+| CI secret injection | Python suite | CI sets slots as environment variables |
+| the matrix keeps its shape | Python suite | it was already one variable per key |
+
+**Rule:** no bare default at any level. An unnamed key request errors rather than
+guessing. `TOKENSHIELD_API_KEY` and `TS_KEY` are deleted, which fixes BC-4
+structurally rather than removing one variable and leaving the pattern in place.
 
 ## 6.2 LLD — cases as data (Phase 1)
 
@@ -324,6 +347,48 @@ Bodies become JSON with a small template vocabulary (`{{model}}`,
 code becomes a named generator both sides implement — kept to as few as
 possible, and every one listed in §11 when added.
 
+## 6.3 LLD — the JS-SDK probe boundary (D-7)
+
+Tracing what `adapters.ts` actually needs changed this design. `recordingFetch`
+is handed to the SDK's constructor and delegates to `Transport.sendRaw`, so
+keeping the probe on the existing stack drags in **1,439 lines** — transport,
+classify, redact, signal, sse, types — every one of which Python would also own.
+Parallel implementations policed by golden files is precisely the Go mistake, and
+1,400 lines of exactly that were deleted on 2026-09-07 (AD-32).
+
+So the boundary moves instead: the probe does HTTP and nothing else.
+
+```mermaid
+sequenceDiagram
+  participant PY as Python engine
+  participant CLI as node probe (thin)
+  participant SDK as openai / anthropic npm
+  participant GW as gateway
+
+  PY->>CLI: spawn: {surface, body, baseURL, key, mode}
+  CLI->>SDK: create(), with recordingFetch as its fetch
+  SDK->>CLI: the request the SDK actually built
+  Note over CLI: mask Authorization / x-api-key HERE,<br/>so no plaintext key crosses the boundary
+  CLI->>GW: HTTP (real key on the wire, as any client would)
+  GW-->>CLI: status, headers, body
+  CLI-->>PY: raw Exchange as JSON on stdout (pre-masked)
+  PY->>PY: classify -> verdict
+  PY->>PY: redactBody (deep)
+  Note over PY: verdicts and deep redaction exist ONCE
+```
+
+What the probe keeps: `adapters.ts` (312) plus a new `probe.ts` (~150) plus the
+wire types. What it does **not** keep: classify, redact, signal, sse, transport.
+Duplication is a ~20-line header mask, not 1,439 lines of parallel logic.
+
+The header mask is the one thing that exists on both sides, and it is tiny,
+single-purpose, and covered by the same test vectors as the Python masker.
+
+**Residual risk:** the raw record crosses a pipe. It is pre-masked, same machine,
+same trust boundary as the process holding the key anyway — but it is a new path
+and Phase 2 must include a test asserting no `cg-ak-` / `cg-mk-` value can appear
+on that boundary.
+
 ---
 
 ## 7. Conventions to reconcile before any code moves
@@ -331,11 +396,12 @@ possible, and every one listed in §11 when added.
 | # | Conflict | Resolution |
 |---|---|---|
 | 1 | baseURL includes `/v1` (Python) vs excludes it (TS) — BC-5 | **excludes.** Profiles name a gateway, not a surface; `/v1/...` is part of the path. Python's `BASE_URL` gets a one-line shim. |
-| 2 | Credential source — BC-3, BC-4 | §6.1, pending D-2. `TS_KEY` deleted regardless. |
+| 2 | Credential source — BC-3, BC-4 | **resolved, D-2 option C**: alias slots in either `.env.local` or the environment, no bare default, `TOKENSHIELD_API_KEY` and `TS_KEY` deleted. §6.1 |
 | 3 | Default model matrix — BC-7 | one default per repo is fine; the **case files** must never hardcode a model. `{{model}}` only. |
 | 4 | Findings numbering | one ledger: `FINDINGS.md` here. Python landmine numbers are authoritative where they exist (LANDMINE-1/2/3), since they cite gateway source. |
 | 5 | Result artefacts truncated per run — BC-8 | timestamped output directory; never truncate. |
 | 6 | Mongo access — BC-6 | allowed for **reading** org/key config and **seeding fixture keys** only. The lab still persists no state of its own. Written into the engine's module docstring. |
+| 7 | Redaction ownership | **resolved, D-7**: Python owns deep redaction; the Node probe masks auth headers before emitting. One deep implementation, one ~20-line mask. §6.3 |
 
 ---
 
@@ -375,7 +441,7 @@ language-neutral.
 
 | Step | Action | Gate |
 |---|---|---|
-| 2.1 | FastAPI on a second port; `config` (§6.1), `redact` (single impl), `transport`, `Exchange` | unit tests, including redaction leak tests ported from `redact.test.ts` |
+| 2.1 | FastAPI on a second port; `config` (§6.1 alias slots), `redact` (the only deep impl), `transport`, `Exchange` | unit tests, including the redaction leak tests ported from `redact.test.ts`, **plus a probe-boundary test asserting no key value can cross it** (§6.3) |
 | 2.2 | `/api/health`, `/api/config` only | `lab diff -a node -b python` → 0 differences |
 
 ### Phase 3 — Read-only endpoints
@@ -418,7 +484,7 @@ chunk boundaries, gap/timing analysis.
 | Step | Action | Gate |
 |---|---|---|
 | 8.1 | Reduce `packages/server` to the JS-SDK probe only | UI green on Python for all 27 endpoints |
-| 8.2 | Delete what the JS-SDK probe does not need from `packages/client` | typecheck, tests, eslint clean |
+| 8.2 | Delete what the JS-SDK probe does not need from `packages/client`. Under D-3 and D-7 the probe keeps `adapters.ts` (312) + a new `probe.ts` (~150) + wire types (~80), so roughly **5,700 of 6,253 lines are deleted rather than maintained** | typecheck, tests, eslint clean |
 | 8.3 | One `README` covering both repos and the split | a new person can run it from the README alone |
 
 **Do not start Phase 8 until Phases 3–6 have been green for a full working
@@ -432,6 +498,7 @@ session.** Retiring the fallback is the irreversible step.
 |---|---|
 | **Three layers instead of one** — the Go mistake, repeated | Phase 8 is mandatory, not optional. If we will not commit to Phase 8, do not start Phase 2. |
 | Redaction regresses during the move | Phase 2.1 ports the redaction tests *first*. A leak here is worse than any gateway finding. |
+| A plaintext key crosses the new probe boundary (D-7) | the probe masks auth headers before emitting; Phase 2.1 gate includes a test that no `cg-ak-`/`cg-mk-` value can appear on stdout |
 | Big-bang cutover fails | every endpoint gated by `lab diff`; Node stays until Phase 8 |
 | Python environment friction | already seen: 3.14.3 against LiteLLM's `<3.15`, and a cp1252 crash on its banner. **Pin a 3.12 venv in Phase 0.** |
 | Weaker typing than TS strict | pyright strict in CI from Phase 2.1; wire types generated from the shared schema |
@@ -442,10 +509,13 @@ session.** Retiring the fallback is the irreversible step.
 no change a person can see, stop and re-read §1. That is the signal missed
 during the Go migration — every individual step there looked reasonable.
 
-**Estimate.** 8–13 sessions: Phase 0 (1), 1 (1–2), 2 (1–2), 3–6 (3–5),
-7 (2–3), 8 (1). If that is too long, keeping the two repos separate with clear
-jobs is a legitimate answer and this plan should be declined rather than
-half-executed.
+**Estimate.** Revised down to **7–11 sessions** now that D-3 and D-7 are
+settled: Phase 0 (1), 1 (1–2), 2 (1–2), 3–6 (3–5), 7 (2–3), 8 (**under 1** — it
+is mostly deletion, not porting, since the probe keeps ~540 lines rather than
+1,751 and nothing is published for outside consumption).
+
+If that is still too long, keeping the two repos separate with clear jobs is a
+legitimate answer and this plan should be declined rather than half-executed.
 
 ---
 
@@ -457,11 +527,12 @@ rules out.
 | ID | Decision | Status |
 |---|---|---|
 | D-1 | Converge on Python probing + TS UI, rather than porting the backend to Go | **accepted** by user 2026-09-07 |
-| D-2 | Whether ambient-environment credentials are permitted at all, and behind what flag (§6.1) | **open — blocks Phase 0.5** |
-| D-3 | Whether `packages/client` is published for outside consumption, or the pytest suite is the customer artefact | **open — shapes Phase 8.2** |
-| D-4 | baseURL excludes `/v1` | proposed, §7.1 |
-| D-5 | Mongo is read/seed only; the lab persists nothing of its own | proposed, §7.6 |
-| D-6 | Node retains the JS vendor SDK probe permanently | proposed, §4 |
+| D-2 | **Option C — the alias-slot model.** Credentials resolve by named alias from an explicit argument, then `.env.local`, then a `TSLAB_KEY_<ALIAS>` environment slot, then fail. No bare default anywhere; `TOKENSHIELD_API_KEY` and `TS_KEY` deleted as concepts. Rules out the flag-gated compromise, which would have been permanently on in CI and therefore not a control. §6.1 | **accepted** 2026-09-07 |
+| D-3 | **The pytest suite is the customer-facing artefact; `packages/client` stays private.** Three audiences exist — the gateway team wants `FINDINGS.md`, an evaluator wants the xlsx/PDF report (already being produced, see `colgate-poc/`), an integrating customer wants a suite they run against their own key. Only the third needs published code, and Python serves it better. Rules out committing to a public npm API surface and semver. | **accepted** 2026-09-07 |
+| D-4 | baseURL excludes `/v1`; profiles name a gateway, not a surface | **accepted** 2026-09-07, §7.1 |
+| D-5 | Mongo is read/seed only; the lab persists nothing of its own | **accepted** 2026-09-07, §7.6 |
+| D-6 | Node retains the JS vendor SDK probe permanently — it is coverage, not duplication, because customers use both the JS and Python SDKs | **accepted** 2026-09-07, §4 |
+| D-7 | **The probe becomes a thin CLI rather than keeping the TS stack.** Tracing `adapters.ts` showed it pulls in 1,439 lines (transport, classify, redact, signal, sse, types) that Python would also own. This reverses the lean toward "accept the duplication, police it with a golden corpus" — that is the Go mistake restated, and 1,400 lines of it were deleted the same day (AD-32). The probe now does HTTP plus a ~20-line auth-header mask; Python owns verdicts and deep redaction. §6.3 | **accepted** 2026-09-07 |
 
 ## 11. Change log
 
@@ -470,3 +541,4 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | — | D-2 and D-3 resolved; D-4/5/6 confirmed; **D-7 added** after tracing the probe's real dependency closure. §5 ownership corrected, §6.1 credential LLD replaced with the alias-slot rule, §6.3 probe-boundary LLD added, §7 rows resolved, Phase 2.1 and 8.2 gates tightened, estimate revised 8–13 → 7–11 sessions. Still no code changed. | `docs/CONVERGENCE.md` |
