@@ -181,7 +181,7 @@ export async function runPreflight(
         detail: !ok
           ? 'Skipped — the key was not accepted'
           : models.length > 0
-            ? `${models.length} model${models.length === 1 ? '' : 's'} allowed for this key`
+            ? `${models.length} model${models.length === 1 ? '' : 's'} returned (key-filtered or org catalogue: unverified)`
             : 'Key authenticated but no models are allowed for it',
         ...(ok ? { exchange: modelsExchange } : {}),
       });

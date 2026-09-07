@@ -358,7 +358,7 @@ export const api = {
   preflight: (body: TargetRef) =>
     json<PreflightResponse>('/api/preflight', { method: 'POST', body: JSON.stringify(body) }),
 
-  /** Free — one GET /v1/models, filtered by the key's allowedModels. */
+  /** Free - one GET /v1/models. Whether it filters by the key is unverified; see FINDINGS.md #13. */
   models: (body: TargetRef) =>
     json<{ models: ModelInfo[]; exchangeId: string; verdict: Verdict }>('/api/models', {
       method: 'POST',

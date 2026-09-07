@@ -108,7 +108,7 @@ export function Connect(props: ConnectProps) {
       {result !== null && result.models.length > 0 && (
         <Card
           title="Models allowed for this key"
-          subtitle="From GET /v1/models — the gateway filters this list by the key’s allowedModels."
+          subtitle="From GET /v1/models. Whether this is the key’s allowedModels or the whole org catalogue is UNVERIFIED — 53 models came back for a $2 test key, and LiteLLM returns only what its key can reach. See FINDINGS.md #13."
           right={
             <input
               value={modelFilter}
@@ -211,9 +211,13 @@ export function Connect(props: ConnectProps) {
 
           <p className="mt-3 text-[10px] leading-relaxed text-zinc-600">
             The blue name is the <strong>wire name</strong> — what the model is shown, and what a
-            refusal names. It is derived from the server name here because the gateway returns it
-            nowhere: both MCP endpoints, the <code className="mono">mcp_list_tools</code> item and{' '}
-            <code className="mono">mcp_call</code> all report the upstream name instead. Use it to
+            refusal names. It is derived from the server name here because no
+            <em> listing </em> returns it: both MCP endpoints, the{' '}
+            <code className="mono">mcp_list_tools</code> item and{' '}
+            <code className="mono">mcp_call</code> all report the upstream name. It does reach
+            clients on the tool-call path though — a mixed turn returned{' '}
+            <code className="mono">huggingface__hub_repo_search</code> in{' '}
+            <code className="mono">tool_calls</code>, which is FINDINGS.md #9. Use it to
             force a call to a blocked tool and see whether the refusal is{' '}
             <code className="mono">policy_block</code> rather than{' '}
             <code className="mono">unknown_tool</code>.

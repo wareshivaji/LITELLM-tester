@@ -320,7 +320,7 @@ export function TargetPicker({
       </div>
 
       <p className="mt-4 text-xs text-zinc-600">
-        Preflight runs five checks against the selected target. No provider call, costs nothing.
+        Preflight runs six checks against the selected target. No provider call, costs nothing.
       </p>
       {runError !== null && (
         <p className="mt-3 rounded-md border border-rose-900/60 bg-rose-950/30 px-3 py-2 text-sm text-rose-300">
