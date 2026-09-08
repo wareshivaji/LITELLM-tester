@@ -1,8 +1,8 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phase 0.1 done** (2026-09-07). 0.2 is a user action — rotate **3 keys** (D-8).
-0.3 (`git init`) can run before or after 0.2; running it first makes the rotation a
-reviewable diff, and the 0.1 gate re-runs before any commit either way.
+**Status:** **Phase 0 complete** (2026-09-07) except **0.2**, which is a user action —
+rotate 3 keys (D-8). 0.3 ran first, so that rotation now arrives as a reviewable diff.
+**Next: Phase 1 — cases as data.** It does not depend on 0.2.
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -420,12 +420,39 @@ Ordered. 0.1 must precede 0.3.
 |---|---|---|
 | 0.1 | ~~Scrub the 8 real credentials from 12 files~~ Scrub every credential from files that will be committed (BC-1, corrected to 23). Source reads named env slots via a new `_creds.py`; `RUNBOOK.md` keeps a name-only inventory; the `env.*` credential store is gitignored rather than scrubbed, because it is the store. | **restated:** no credential in any file **git would track**. A tree-wide grep returning nothing was the wrong gate — the `env.*` scripts legitimately hold keys and `env.toolgov.sh` says so in its own header; destroying them would break a working setup. | **DONE 2026-09-07** |
 | 0.2 | **User action, narrowed to 3 keys** (see D-8 for why the other 20 are an accepted risk): the **2 `cg-mk-` management keys** from `build_management_keys_xlsx.py`, and **`Bedrock Test`** — the `cg-ak-` key its own source comment called a prod key, duplicated as `DEV_KEY` across six modules. **Order matters:** mint replacements *first*, revoke the old management keys *last*, or you lose the minting path. | user confirms the 3 |
-| 0.3 | `git init` + first commit. *(`.gitignore` moved into 0.1 — the 0.1 gate depends on it, since "no credential in a tracked file" is only true once the credential store is excluded.)* | history contains no credential |
-| 0.4 | Merge the two findings ledgers into `FINDINGS.md`; dedupe against Python landmines; mark every entry with its source repo | one ledger, no contradictions |
-| 0.5 | Write §7 conventions into both repos as code comments, not just here | both sides agree on baseURL and credential rules |
+| 0.3 | `git init` + first commit. *(`.gitignore` moved into 0.1 — the 0.1 gate depends on it.)* Added `.gitattributes` (`eol=lf`): without it every file reported a CRLF conversion on a Windows checkout, and that churn hides real diffs in a repo whose whole value is reviewable evidence. | **DONE 2026-09-07** — `fea3c7c`, 59 tracked / 64 ignored, history verified clean |
+| 0.4 | Merge the two findings ledgers into `FINDINGS.md`; dedupe; mark every entry with source and confidence | **DONE 2026-09-07** — one ledger, 26 entries (17 `F-*`, 9 `LM-*`). Gained 6 findings this repo did not have; 3 confirmed independently on both sides. Ids **not** renumbered (`LM-*` from Python, `F-*` from here) because both repos reference them. **One contradiction left open on purpose** — see below. |
+| 0.5 | Write §7 conventions into both repos as code comments, not just here | **DONE 2026-09-07** — 5 comments placed next to the lines they govern: baseURL/`GATEWAY_ROOT` and the truncation warning in `_util.py`, the Mongo boundary in `seed_key.py`, the one-ledger rule in the Python `README.md`, and the shared credential rule in `config.ts`. A convention living only in a design doc is one nobody reads at the moment they are about to break it. |
 
 **Deliverable a person can see:** one findings list, and a version-controlled
-Python repo with no secrets in it.
+Python repo with no secrets in it. **Both delivered.**
+
+#### Phase 0 outcome
+
+Complete except 0.2, which is a user action and cannot be done for them.
+
+| | |
+|---|---|
+| Credentials in tracked files | **0** — was 23 across 12 files |
+| Python repo | version-controlled, history verified clean, 59 tracked / 64 ignored |
+| Findings | **one** ledger of 26 — 17 from here, 9 from the Python suite — replacing two separate lists |
+| Conventions | 5, placed in code rather than only in this document |
+| Regression check | 167 pytest tests collect; 40 Python files compile; TS typecheck, tests and eslint clean |
+
+**What the merge actually bought.** Six findings this repo did not have, the
+sharpest being **LM-2**: `messages[].content` as an array is refused even when
+text-only. That is the broadest client-compatibility break on the list — it
+rejects valid OpenAI requests from clients that never asked for images — and it
+had been sitting in the Python suite as a `strict=True` xfail the whole time.
+Three findings were reached independently on both sides, which is the strongest
+confidence signal available without re-measuring.
+
+**One contradiction is recorded and deliberately unresolved.** LM-1 (Python,
+citing `handler.go`) says the 400 body is flat; a 2026-09-06 measurement here
+found 400 and 404 bodies properly OpenAI-shaped and only `/v1/moderations` flat.
+Either the gateway was partly fixed or the two lists describe different handlers.
+Guessing which would put a false fact into a document whose value is that it
+contains none.
 
 #### Exposure assessment (measured 2026-09-07, after 0.1)
 
@@ -570,6 +597,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **0.3–0.5** | **Phase 0 closed** except the user action. 0.3: `git init` on the Python repo (`fea3c7c`), plus `.gitattributes` to stop CRLF churn; history verified to contain no credential. A pre-commit scan initially aborted on `cg-ak-XXXXXXXX` in `MANAGEMENT_API_SPEC.md` — a documentation placeholder the 0.1 gate excluded but the shell scan did not; the two checks now share one rule, because otherwise each blocks on the other's false positive. 0.4: ledgers merged into 26 entries, +6 new, 3 independently confirmed, one contradiction left open. 0.5: 5 convention comments placed in code. Verified after: 167 tests collect, 40 files compile, TS clean. | `tokenshield-compat-tests/*`, `docs/FINDINGS.md`, `packages/server/src/config.ts`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.2** | Scope narrowed from 23 keys to 3 (**D-8**) after measuring the exposure rather than assuming it: the repo is not inside OneDrive and was never committed, so nothing left the machine and the risk was prospective — which Phase 0.1 already closed. Recorded the exposure assessment and the mint/revoke mechanics (Management API creates; the console and a GraphQL mutation revoke) so the reasoning survives the decision. Still a user action; not done. | `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.1** | **Credential scrub complete; gate passed.** Backed the un-versioned repo up first. New `_creds.py` resolves by named env slot and fails loudly with no built-in default — replacing one production key that was duplicated as `DEV_KEY` across 6 modules, three of them under a comment reading *"do not commit"*. `build_management_keys_xlsx.py`: 4 keys (2 management) became stable labels so the report keeps its meaning. 5 result `.txt` files masked. `RUNBOOK.md`: 15 key values replaced by a name-only inventory. `.gitignore` added covering the `env.*` credential store, generated `.xlsx`, and run artefacts. **BC-1 corrected 8 → 23** and the 0.1 gate restated. Verified: 40 files compile, 167 tests collect, a missing credential exits with guidance naming the variable, and no credential remains in any of the 58 files git would track. | `tokenshield-compat-tests/*` (10 files), `docs/CONVERGENCE.md` |
 | 2026-09-07 | — | D-2 and D-3 resolved; D-4/5/6 confirmed; **D-7 added** after tracing the probe's real dependency closure. §5 ownership corrected, §6.1 credential LLD replaced with the alias-slot rule, §6.3 probe-boundary LLD added, §7 rows resolved, Phase 2.1 and 8.2 gates tightened, estimate revised 8–13 → 7–11 sessions. Still no code changed. | `docs/CONVERGENCE.md` |

@@ -4,6 +4,19 @@
  * Keys are read from `.env.local` in the repo root and NOWHERE else. The
  * ambient process environment is never consulted for a credential.
  *
+ * CONVENTION (convergence D-2) - this rule is now SHARED with
+ * tokenshield-compat-tests, which reached it from the opposite direction. That
+ * repo reads credentials from the environment, and the reconciliation is that
+ * the danger was never the environment but the UNNAMED DEFAULT: a bare
+ * TOKENSHIELD_API_KEY is implicit, unattributable and single-valued, and is the
+ * only reason a stale TS_KEY could silently shadow it. A named slot -
+ * TSLAB_KEY_<ALIAS>, as below - has none of those properties.
+ *
+ * So the shared rule is: resolve by named alias, in order - explicit argument,
+ * then .env.local, then a TSLAB_KEY_<ALIAS> environment slot - and fail loudly
+ * rather than guess. No bare default at any level. See _creds.py in the Python
+ * repo for the same rule stated from the other side.
+ *
  * That is not paranoia. In the Python suite a stale `TS_KEY` left over in a
  * PowerShell session silently outranked the key the runner thought it was
  * using, and every request authenticated as the wrong key — two hours of "it
