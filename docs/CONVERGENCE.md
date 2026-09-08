@@ -1,10 +1,12 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–4 complete** (2026-09-07). **16 of 27 endpoints** on the Python
-engine, each gated by `lab diff` (25 cases, all clean). Every gateway-calling
-endpoint is migrated except `/api/compare`, which D-6 keeps in Node permanently.
-0.2 withdrawn (D-9); every phase has been re-scoped after testing its premise.
-**Next: Phase 5 — the four streaming endpoints.**
+**Status:** **Phases 0–4 and 5a complete** (2026-09-07). **18 of 27 endpoints** on the
+Python engine, each gated by `lab diff` (30 cases, all clean), plus an SSE parser
+byte-identical to the TypeScript on a recorded fixture. `/api/compare` stays in Node
+permanently (D-6). 0.2 withdrawn (D-9); every phase re-scoped after testing its
+premise, and twice now a documented deferral has been caught by the gate at the
+moment it came due.
+**Next: Phase 5b — the two runners, and the case bodies they need.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -631,11 +633,58 @@ exist: no part of a credential appears anywhere in a serialised `Exchange`.
 
 ### Phase 5 — Streaming
 
-`/api/stream`, `/api/prompts/run`, `/api/scenarios/run`,
-`/api/governance/burst`. The hardest phase: SSE relay, partial UTF-8 across
-chunk boundaries, gap/timing analysis.
-**Gate:** byte-identical SSE frame sequence for a recorded fixture, plus
-`lab diff` on the terminal payload.
+**Split, as Phase 4 was.** The whole of it is ~2,000 lines: 483 of streaming
+foundation plus the 1,338 of case bodies and expectations that Phase 1
+deliberately left behind.
+
+#### 5a — the mechanism  ·  **DONE 2026-09-07**
+
+SSE parsing, `Transport.stream`, the relay, `/api/stream`,
+`/api/governance/burst`.
+
+**Two things the premise check changed:**
+
+- **`stream.ts` (359 lines) is not needed.** Gap, anomaly and Responses
+  lifecycle analysis is entirely *browser-side* — only `Streaming.tsx` imports
+  it, and the server never analyses. It stays in TypeScript as UI code. **That
+  also corrects the Phase 4a estimate** that Phase 8 would keep only the
+  JS-SDK probe closure: the web imports 17 things from the client package,
+  `analyseStream` and `checkResponsesLifecycle` among them, so whatever the UI
+  imports survives too. To be *measured* in Phase 8 rather than guessed at a
+  second time.
+- **`/api/governance/burst` does not stream.** It loops and returns plain JSON,
+  so "four streaming endpoints" was wrong — there are three. Burst came into 5a
+  anyway, being simple and free.
+
+**Gate met, and honestly.** A live streaming call is non-deterministic, so
+gating on its output would be theatre. The parser is gated on a **recorded
+fixture** pushed through both implementations with identical read boundaries —
+which is what the gate above actually asked for. `npm run sse:parity`: **9
+frames from 10 reads, byte-identical**. The fixture covers every branch that has
+gone wrong somewhere, including the multi-byte character split across two reads
+that bit the Go port. `lab diff` is **30 same, 0 differ**.
+
+The live relay is then checked structurally, and matched: same event kinds,
+contiguous seqs, a final `[DONE]`, same status and verdict, each side's
+recording matching what it relayed. Frame count differed — 5 against 4 — which
+is the provider splitting the same answer differently on two calls; both
+assembled to the identical text. Worth checking rather than assuming, because a
+coalescing bug in the reader would look the same from outside.
+
+**Another deferred field came due, and the gate found it.** Phase 3 omitted
+`label` and `docs` from the surface specs with a comment saying they would
+arrive with the first endpoint that needed one. `/api/stream` refuses a
+non-streamable surface *by label* — "MCP servers does not support streaming" —
+and the engine was naming it by id. That is twice now that a documented
+deferral has been caught by the gate at exactly the right moment.
+
+#### 5b — the two runners  ·  not started
+
+`/api/prompts/run` and `/api/scenarios/run`, which need the case **bodies** and
+**expectations** — the 1,338 lines Phase 1 correctly declined to turn into a
+neutral format, now due as Python literals. Both spend.
+**Gate:** `lab diff` on the dry-run path, which is free; the runs themselves
+cost and are priced before being sent.
 
 ### Phase 6 — Stateful and management
 
@@ -721,6 +770,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **5a** | **Phase 5a complete.** SSE parsing, `Transport.stream`, the relay, `/api/stream`, `/api/governance/burst`. `lab diff` **30 same, 0 differ**; the parser byte-identical to the TypeScript on a recorded fixture via `npm run sse:parity`. The premise check dropped `stream.ts` (browser-side analysis, not the server's) and corrected "four streaming endpoints" to three. The gate caught `label` — a Phase 3 deferral coming due. Live relay verified structurally; a 5-vs-4 frame count was the provider, not the reader. **18 of 27 endpoints**, 95 tests. | `tokenshield-compat-tests/engine/*`, `scripts/sse-parity.mjs`, `testdata/sse/*`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **4b** | **Phase 4b complete.** Seven endpoints — models, preflight, mcp/browse, mcp/test, mcp/call, mcp/aggregate, tools/loop. `lab diff` **25 same, 0 differ**. `/api/compare` excluded by D-6, not deferred: it drives the real vendor npm SDKs. `tools/loop` gated on validation paths and compared structurally on a live round-trip, since a strict diff of model output would be theatre. Ported the two corrections the TypeScript carries as comments — `summarise_turn` must be told its surface, and `check_tool_calls` must NOT flag a missing `index`. **16 of 27 endpoints.** | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **4a** | **Phase 4a complete.** `transport`, `Exchange`, deep `redact`, `classify`, `signal`, `surfaces`, and `/api/exchange`. `lab diff` **15 same, 0 differ** including a real free gateway call. Phase 4 split first — ~1,900 lines of foundation would have meant rushing what everything depends on. Three bugs caught: a case-sensitivity bug in the exposure summary, an invented `mode` value, and a `summarize()` stub returning whole records. The third also exposed a gate gap — the run-list cases ran before the exchanges and so compared empty stores; a post-exchange case now covers it. 78 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **3** | **Phase 3 complete.** Six data-serving endpoints migrated; `lab diff` 9 same, 0 differ; UI verified running on the engine alone. Re-scoped first, which this time fixed a contradiction: three of the seven listed endpoints call the gateway, and transport was deferred to Phase 4 — the phase depended on a component scheduled after it. `engine/cases.py` generated from Node's payloads rather than transcribed. The gate caught a real bug immediately: the engine advertised a `/mock-mcp` URL for a server it does not host. 33 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
