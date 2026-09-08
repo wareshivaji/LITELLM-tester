@@ -266,6 +266,31 @@ export interface PromptCaseInfo {
   expect: Record<string, unknown>;
 }
 
+/**
+ * One suite as `/api/scenarios/suites` reports it.
+ *
+ * Deliberately NOT the client package's `Scenario` type. That one carries a
+ * `body: (ctx) => ...` closure and an `expect`, which are the engine's business
+ * and do not survive JSON. What the page needs is what the endpoint already
+ * sends, and keeping the two apart is what lets the engine move languages
+ * without the UI noticing.
+ */
+export interface ScenarioSuiteInfo {
+  id: string;
+  title: string;
+  description: string;
+  scenarios: Array<{
+    id: string;
+    title: string;
+    why: string;
+    surface: string;
+    spends: boolean;
+    reference: string;
+    landmine?: string;
+    notImplemented?: string;
+  }>;
+}
+
 export interface PromptCatalogue {
   mcpServerUrl: string;
   surfaces: PromptSurfaceId[];
@@ -329,6 +354,8 @@ export async function runPrompts(
 }
 
 export const api = {
+  scenarioSuites: () => json<ScenarioSuiteInfo[]>('/api/scenarios/suites'),
+
   promptCases: () => json<PromptCatalogue>('/api/prompts/cases'),
 
   promptDryRun: (body: Record<string, unknown>) =>

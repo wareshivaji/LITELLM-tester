@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
-import { SUITES } from '@tokenshield/client';
 import type {
   AuthScheme,
   Exchange,
@@ -10,7 +9,7 @@ import type {
 } from '@tokenshield/client';
 
 import { api } from '../api';
-import type { LabConfigResponse } from '../api';
+import type { LabConfigResponse, ScenarioSuiteInfo } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
 import { Card, Empty, selectClass, StatusPill } from '../components/ui';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
@@ -46,8 +45,31 @@ interface ScenariosProps {
 }
 
 export function Scenarios(props: ScenariosProps) {
-  const [suiteId, setSuiteId] = useState(SUITES[0]?.id ?? '');
-  const suite = useMemo(() => SUITES.find((s) => s.id === suiteId) ?? SUITES[0], [suiteId]);
+  // Fetched rather than imported, matching PromptLab. The suites used to come
+  // from `SUITES` in the client package, which pinned the case definitions to
+  // TypeScript; behind the API they can move languages without this page
+  // changing. See docs/CONVERGENCE.md Phase 1.
+  const [suites, setSuites] = useState<ScenarioSuiteInfo[]>([]);
+  const [suiteId, setSuiteId] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    void api
+      .scenarioSuites()
+      .then((s) => {
+        if (!live) return;
+        setSuites(s);
+        setSuiteId((current) => (current === '' ? (s[0]?.id ?? '') : current));
+      })
+      .catch((e: unknown) => {
+        if (live) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const suite = useMemo(() => suites.find((s) => s.id === suiteId) ?? suites[0], [suites, suiteId]);
   const pendingCount =
     suite?.scenarios.filter((sc) => sc.notImplemented !== undefined).length ?? 0;
 
@@ -152,7 +174,7 @@ export function Scenarios(props: ScenariosProps) {
         }
       >
         <div className="flex flex-wrap gap-1.5">
-          {SUITES.map((s) => (
+          {suites.map((s) => (
             <button
               key={s.id}
               type="button"

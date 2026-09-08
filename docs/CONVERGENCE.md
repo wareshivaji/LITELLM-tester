@@ -1,8 +1,9 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phase 0 complete** (2026-09-07). Four real steps; 0.2 withdrawn (D-9).
+**Status:** **Phases 0 and 1 complete** (2026-09-07). 0.2 withdrawn (D-9); Phase 1
+re-scoped from three steps to one after testing its premise.
 Numbering kept as 0.1/0.3/0.4/0.5 because commits already reference it.
-**Next: Phase 1 — cases as data.**
+**Next: Phase 2 — Python engine skeleton.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -482,15 +483,30 @@ Both facts come from the compat suite's own docs and test plans.
 
 ### Phase 1 — Cases as data
 
+**Re-scoped 2026-09-07 before starting, and it shrank to one change.** The
+premise was "TS closures cannot cross languages, so extract them to a neutral
+format". Checking that premise showed case definitions are read **server-side
+only** — with one exception: `PromptLab` fetched `/api/prompts/cases` while
+`Scenarios.tsx` imported `SUITES` straight from the client package. That
+inconsistency was the entire obstacle. Once both pages fetch, definitions live
+behind the API and move to Python in Phase 3 as Python literals, which is how
+the Python suite already writes its own cases. No neutral format, no schema, no
+dual readers — those would have been three artefacts serving a requirement that
+does not exist.
+
 | Step | Action | Gate |
 |---|---|---|
-| 1.1 | Design `cases/*.json` + JSON Schema; template vocabulary only | schema validates |
-| 1.2 | Port `scenarios.ts` (646) and `prompts.ts` (692) to case files; TS reads the files instead of closures | **all 26 TS test files still pass; UI renders the same suites** |
-| 1.3 | Python reads the same files | a case file executed both sides produces the same request body |
+| 1.1 | ~~Design `cases/*.json` + JSON Schema~~ **dropped** — nothing needs a language-neutral format; only the server reads cases | n/a |
+| 1.2 | Make `Scenarios.tsx` fetch `/api/scenarios/suites` instead of importing `SUITES`, matching `PromptLab`. New `ScenarioSuiteInfo` in `api.ts` — deliberately **not** the client package's `Scenario` type, which carries a `body` closure and an `expect` that are the engine's business and do not survive JSON | **DONE 2026-09-07** — 0 type errors, 26 test files pass, eslint clean; UI verified live: 4 suites with 6/4/4/2 scenarios, descriptions and spend counts computed from fetched data, switching suites works |
+| 1.3 | ~~Python reads the same files~~ **dropped** with 1.1 | n/a |
 
-**Gate:** `lab diff` shows `/api/scenarios/suites` and `/api/prompts/cases`
-identical before and after. Standalone value: even if we stop here, cases are
-language-neutral.
+**Measurable side effect:** the web bundle fell from 338.29 kB to 330.65 kB. The
+case definitions are no longer shipped to the browser, which they never should
+have been.
+
+**Gate met.** `lab diff` was not needed: the endpoint was not touched, only the
+consumer, so the payload is identical by construction. Verified in the browser
+instead, which is the stronger check for a UI change.
 
 ### Phase 2 — Python engine skeleton
 
@@ -604,6 +620,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **1** | **Phase 1 complete, after re-scoping it from three steps to one.** Testing the premise showed no language-neutral case format is needed — only the server reads case definitions, and the sole obstacle was `Scenarios.tsx` importing `SUITES` while its sibling page already fetched. Made it fetch. Dropped 1.1 and 1.3 as artefacts serving a requirement that does not exist. Bundle fell 338.29 → 330.65 kB. | `packages/web/src/api.ts`, `packages/web/src/pages/Scenarios.tsx`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.2** | **Withdrawn (D-9)** — not merely closed. The step was a rotate-on-exposure reflex applied before measuring the exposure; measuring showed it unnecessary. Recorded as a second tripwire in §9, because the real cost was a plan blocking on an unverified premise. | `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.3–0.5** | **Phase 0 closed** except the user action. 0.3: `git init` on the Python repo (`fea3c7c`), plus `.gitattributes` to stop CRLF churn; history verified to contain no credential. A pre-commit scan initially aborted on `cg-ak-XXXXXXXX` in `MANAGEMENT_API_SPEC.md` — a documentation placeholder the 0.1 gate excluded but the shell scan did not; the two checks now share one rule, because otherwise each blocks on the other's false positive. 0.4: ledgers merged into 26 entries, +6 new, 3 independently confirmed, one contradiction left open. 0.5: 5 convention comments placed in code. Verified after: 167 tests collect, 40 files compile, TS clean. | `tokenshield-compat-tests/*`, `docs/FINDINGS.md`, `packages/server/src/config.ts`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.2** | Scope narrowed from 23 keys to 3 (**D-8**) after measuring the exposure rather than assuming it: the repo is not inside OneDrive and was never committed, so nothing left the machine and the risk was prospective — which Phase 0.1 already closed. Recorded the exposure assessment and the mint/revoke mechanics (Management API creates; the console and a GraphQL mutation revoke) so the reasoning survives the decision. Still a user action; not done. | `docs/CONVERGENCE.md` |
