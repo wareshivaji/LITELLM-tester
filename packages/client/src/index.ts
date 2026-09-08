@@ -64,7 +64,14 @@ export type { StreamRequest } from './transport.js';
 export {
   runWithSdk,
 } from './adapters.js';
-export type { AdapterInit, SdkFailure, SdkMode, SdkOutcome } from './adapters.js';
+export type {
+  AdapterInit,
+  ProbeAttempt,
+  ProbeOutcome,
+  SdkFailure,
+  SdkMode,
+  SdkOutcome,
+} from './adapters.js';
 export {
   BUDGET_PERIODS,
   readCreatedKey,

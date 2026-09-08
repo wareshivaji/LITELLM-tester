@@ -1,0 +1,19 @@
+{
+  "name": "@tokenshield/lab-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The JS-SDK probe: one request through a real vendor SDK, recorded. Reads a job on stdin, writes one JSON record to stdout. Not a server — the Python engine holds the credentials and serves the API.",
+  "main": "./dist/probe.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tokenshield/client": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2"
+  }
+}

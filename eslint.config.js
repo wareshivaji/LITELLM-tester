@@ -53,9 +53,18 @@ export default tseslint.config(
     // `URL` is here because the parity scripts resolve their fixtures relative
     // to their own module rather than to the working directory: `npm run parity`
     // and a bare `node scripts/...` must find the same file.
+    //
+    // `fetch` is a Node 18+ global, added for `compare-parity.mjs`: that gate
+    // drives the running Python engine over HTTP, because `/api/compare` is the
+    // one endpoint with no second backend left to diff against.
     files: ['scripts/**/*.mjs'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
+      globals: {
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+      },
     },
   },
   {

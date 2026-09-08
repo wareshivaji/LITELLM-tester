@@ -5,7 +5,7 @@
  * `cross-env` is another dependency for four characters of behaviour. This is
  * the smallest thing that works on both.
  *
- *   node scripts/with-env.mjs TSLAB_PORT=8789 npm run dev -w @tokenshield/lab-server
+ *   node scripts/with-env.mjs TSLAB_PORT=8789 npm run dev -w @tokenshield/lab-web
  */
 import { spawn } from 'node:child_process';
 

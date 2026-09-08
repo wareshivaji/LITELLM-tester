@@ -1,6 +1,6 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–7 complete**; **8.1a done** (2026-09-08). **Every endpoint is on the Python
+**Status:** **Phases 0–7 complete**; **8.1 done — the Node backend is retired** (2026-09-08). **Every endpoint is on the Python
 engine except `/api/compare`**, which D-6 keeps in Node permanently. `lab diff` runs
 62 cases, all clean, plus **three** parity scripts — the SSE parser on a recorded byte
 fixture, all 16 scenario bodies, and `fields.ts` against LiteLLM in-process. 139
@@ -8,7 +8,7 @@ engine+reference tests, 306 collected across the compat suite. 0.2 withdrawn (D-
 every phase re-scoped after testing its premise, twice a documented deferral was
 caught by the gate at the moment it came due, and in Phase 7 two of three steps
 dissolved on inspection.
-**Next: Phase 8.1b — the thin JS-SDK probe, then delete the rest of `packages/server`.**
+**Next: Phase 8.2 — delete the now-dead `packages/client` modules; then 8.3, one README.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -861,6 +861,96 @@ definition; the pytest file keeps only facts about LiteLLM alone.
 | 8.1a | **Port the mock MCP server to Python** — the prerequisite the plan missed | `lab diff` clean on 18 new cases |
 | 8.1b | Reduce `packages/server` to the thin JS-SDK probe (D-7); Python `/api/compare` spawns it | UI green on Python for every endpoint |
 
+#### 8.1b — the Node backend is gone
+
+**DONE 2026-09-08.** 2,182 lines deleted across six modules (`routes.ts` 1336,
+`mockMcp.ts` 302, `config.ts` 209, `registry.ts` 192, `index.ts` 77,
+`store.ts` 66). What remains of Node is **one file**: `probe.ts`, 180 lines. The
+package is renamed `packages/server` → `packages/probe`, `@tokenshield/lab-server`
+→ `@tokenshield/lab-probe`, and `fastify` is no longer a dependency of anything.
+
+The boundary is D-7's, and the chain was verified end to end in the browser:
+**vite proxy → Python engine → subprocess spawn → Node probe → the real `openai`
+package → gateway → Python's classifier → UI.** Both clients returned 401 on the
+`INVALID_ON_PURPOSE` alias, and the page showed exactly the contrast the surface
+exists for: raw HTTP reports a bare `Error:` where the SDK reports
+`AuthenticationError` with `status`, `type` and `code` parsed out. Zero spend.
+
+**A refinement to D-7, found while implementing it.** The decision budgeted a
+duplicated ~20-line header masker on the Node side, assuming `redact.ts` would
+become Python-only. It does not: the web imports `toCurl`, which imports
+`isSecretHeader`, so `redact.ts` stays in the browser bundle regardless. The
+probe therefore imports the same `redactHeaders` the rest of the package uses and
+**the duplication D-7 accepted is zero**. The probe's closure is 3 modules —
+`adapters`, `redact`, `types` — 740 lines.
+
+Masking happens *before the record exists*, not before it is emitted: a raw
+value that is never written down cannot leak from a later code path. The job
+goes to the probe on **stdin**, never argv, because a credential in argv is
+visible to every process on the machine.
+
+**`ProbeUnavailable` is a 503, not an outcome.** "The probe would not run" is a
+broken lab; reporting it as an SDK failure would put our own misconfiguration
+into the ledger as a gateway defect — which has happened once, when an AWS load
+balancer's 403 was recorded as a gateway refusal for four days. It earned its
+keep within the hour: a stale probe path returned
+`503 SDK probe unavailable: Cannot find module .../packages/server/dist/probe.js`,
+naming the exact problem instead of inventing a verdict.
+
+#### A sequencing mistake, and what it cost
+
+**I changed the reference implementation before capturing its output.** The D-7
+edit to `adapters.ts` altered what `runWithSdk` returns, which broke Node's
+`/api/compare` — the very thing the port needed to be compared against. Caught
+when the build failed, but by then Node's original behaviour existed only in git.
+
+Recovered by reverting the two changed files, rebuilding, capturing
+`testdata/compare-reference.json`, and restoring. **The lesson is the ordering,
+not the recovery**: capture the reference *first*, because a reference you can
+still reconstruct from git is luck rather than method.
+
+The capture costs nothing to reproduce. Every case runs on the
+`INVALID_ON_PURPOSE` alias, so the gateway answers 401 and no tokens are spent —
+and that is not a cost compromise. A 401 through a real SDK is the most
+informative case this surface has, because the question is what a customer's
+`catch` block receives, and the gateway's flat `{"error":"string"}` envelope is
+not something an OpenAI SDK can parse. A 200 would exercise less. The alias is
+itself a dummy (`cg-ak-0000…`), which is why the fixture is safe to commit —
+there is nothing in it to leak.
+
+`scripts/compare-parity.mjs` joins the parity suite: **8 cases, structure
+matched**. Structural rather than byte-exact, because it drives a real SDK
+against a real gateway and ids, timings and timestamps differ every run — the
+same choice made for `tools/loop` in Phase 4b. It lists what IS compared rather
+than what is excluded, so a newly added field is ignored rather than silently
+failing.
+
+#### What retiring Node actually costs
+
+Stated plainly, because it is the irreversible part. **`lab diff -a node -b
+python` can no longer run** — there is no second backend. `testdata/migration-cases.json`
+(80 cases) becomes a historical artefact: it was green immediately before the
+deletion, and that run is the last one there will ever be. The live gates are now
+**four parity scripts, 156 engine tests and 26 TypeScript test files**. That is a
+real reduction in safety net, which is why the plan called this step irreversible
+and gated it on a full green session.
+
+#### Two smaller things worth recording
+
+- **15 orphaned `tsx watch` processes** blocked the directory rename, every one
+  spawned by my own repeated `dev:server` restarts this session — I had been
+  killing only whichever process held port 8787. They were watching a file that
+  no longer existed. Identified by command line and killed individually rather
+  than by killing all 48 node processes on the machine, most of which are the
+  user's.
+- **`/api/health` still reports `"service": "tokenshield-lab-server"`.** That was
+  correct during the migration — payloads had to be byte-identical to Node's, and
+  a nicer service name would have made the gate meaningless — and it is now
+  simply wrong. **Deliberately left for 8.3** rather than changed here: it is a
+  UI-visible string and, with `lab diff` retired, there is no longer a gate that
+  would catch fallout from changing it. It belongs with the documentation pass,
+  where the rest of the naming is being corrected at once.
+
 #### 8.1a — the route inventory was wrong, and it hid a blocker
 
 **DONE 2026-09-08.** "Every endpoint is migrated except `/api/compare`" was
@@ -1054,6 +1144,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-08 | **8.1b** | **The Node backend is retired.** 2,182 lines deleted across six modules; what remains of Node is one 180-line `probe.ts`. `packages/server` → `packages/probe`, `fastify` dependency gone, web proxy default 8787 → 8801. `/api/compare` is Python spawning the probe over stdin; verified in the browser end to end — vite → engine → subprocess → real `openai` package → gateway → Python's classifier → UI, both clients 401 on a dummy key at zero spend. **D-7 refined: the duplicated masker it budgeted for is zero**, because `redact.ts` stays in the browser bundle for `toCurl` and the probe imports the same `redactHeaders`. New gate `scripts/compare-parity.mjs`, 8 cases structure-matched against a recorded reference — needed because I changed the reference implementation before capturing it, and had to revert to recover it. **`lab diff` node-vs-python can no longer run**: the 80-case file is now historical, and the live gates are 4 parity scripts + 156 engine tests + 26 TS test files. | `packages/probe/*`, `packages/client/src/{adapters,index}.ts`, `packages/web/vite.config.ts`, `scripts/compare-parity.mjs`, `testdata/compare-reference.json`, `tokenshield-compat-tests/engine/{probe,surfaces,app}.py`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | **8.1a** | **Mock MCP server ported to Python — a Phase 8 blocker the plan never recorded.** Node registers **31** routes, not the 27 the plan claimed; the four `mock-mcp` routes were the last it served alone, and retiring it would have pointed every `declared`-mode MCP case at a dead URL. The port found a real defect in code ported six days earlier: `summarise_credential_exposure` answered a different question from its TypeScript namesake and could not see a gateway key in a non-credential header — the exact leak the mock exists to detect. It diverged silently because its only consumer had not been ported yet. Now on the TS contract, parity-checked over 8 header sets. **`lab diff` 80 same, 0 differ** (was 62 cases); 156 engine tests (was 139). `hang` mode, the bounded ring and the no-leak property are asserted rather than diffed, each for a reason the differ cannot overcome. | `tokenshield-compat-tests/engine/{mock_mcp,mcp,redact,config,app}.py`, `engine/tests/test_mock_mcp.py`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | 8 (pre) | **Measured `packages/client` before deleting from it, and the plan's own 8.2 estimate was wrong** — 5,700 lines claimed, **1,087** actually dead post-8.1 and **2,814** with types extracted. The gap is the web's runtime closure (3,495 lines), which the estimate never counted. Nothing is deletable *today*: `adapters` still imports `Transport`, and `client.ts` is still used by `preflight` and the Node `routes.ts`. Prerequisite landed: **`sdkModesFor` moved `adapters.ts` -> `surfaces.ts`**, severing the web's static edge to the vendor SDKs (the bundle was already clean — this frees a *deletion*, not bytes), and `SdkMode` collapsed to an alias of `ExchangeMode`. | `packages/client/src/{adapters,surfaces,index}.ts`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **7** | **Phase 7 complete, with two of three steps dissolved on inspection.** 7.1's premise was false — the scripts are unique coverage, not engine duplicates — so the full request-layer collapse is declined; its security-critical part is done: **`--no-redact` removed**, the flag that produced BC-1's worst artefacts. 7.2 dropped. 7.3 done better than planned: LiteLLM in-process via `get_supported_openai_params`, no proxy or credential needed. That found **7 missing OpenAI chat fields** in `fields.ts` (incl. `max_completion_tokens`) and, once added, **a false `FIELD_GAPS` claim** that `store` had no chat equivalent. Also pinned a LiteLLM trap: `request_type` silently ignores `"responses"`. 139 tests + 306 collected. | `tokenshield-compat-tests/*`, `packages/client/src/fields.ts`, `scripts/litellm-fields-parity.mjs`, `docs/CONVERGENCE.md` |

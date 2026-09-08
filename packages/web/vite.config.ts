@@ -9,6 +9,15 @@ import { defineConfig } from 'vite';
  * The dev server proxies /api to the lab backend, so the browser has one
  * origin and no CORS of its own to think about. The backend port lives in
  * .env.local, so read it from there rather than duplicating the number.
+ *
+ * Since Phase 8.1b the backend is the PYTHON engine, in the sibling
+ * tokenshield-compat-tests repo, started with:
+ *
+ *     python -m uvicorn engine.app:app --host 127.0.0.1 --port 8801
+ *
+ * The Node backend that used to answer on 8787 no longer exists. The default
+ * below moved with it - a default pointing at a deleted process is worse than
+ * no default, because the failure looks like the engine being down.
  */
 function labPort(): number {
   try {
@@ -16,9 +25,9 @@ function labPort(): number {
     const match = /^\s*TSLAB_PORT\s*=\s*(\d+)\s*$/m.exec(contents);
     if (match?.[1] !== undefined) return Number.parseInt(match[1], 10);
   } catch {
-    // No .env.local yet — the default below is also the server's default.
+    // No .env.local yet — the default below is also the engine's default.
   }
-  return 8787;
+  return 8801;
 }
 
 export default defineConfig({

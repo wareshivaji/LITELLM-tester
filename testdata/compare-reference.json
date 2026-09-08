@@ -1,0 +1,661 @@
+[
+  {
+    "name": "unknown surface",
+    "request": {
+      "surfaceId": "nope",
+      "modes": [
+        "raw"
+      ]
+    },
+    "status": 400,
+    "response": {
+      "error": "Unknown surface \"nope\""
+    }
+  },
+  {
+    "name": "no modes selected",
+    "request": {
+      "surfaceId": "chat.completions",
+      "modes": []
+    },
+    "status": 400,
+    "response": {
+      "error": "Pick at least one of: raw, openai-sdk for Chat Completions"
+    }
+  },
+  {
+    "name": "a mode the surface cannot reach",
+    "request": {
+      "surfaceId": "mcp.servers",
+      "modes": [
+        "openai-sdk"
+      ]
+    },
+    "status": 400,
+    "response": {
+      "error": "Pick at least one of: raw for MCP servers"
+    }
+  },
+  {
+    "name": "no target",
+    "request": {
+      "surfaceId": "chat.completions",
+      "modes": [
+        "raw"
+      ]
+    },
+    "status": 200,
+    "response": {
+      "surfaceId": "chat.completions",
+      "outcomes": [
+        {
+          "mode": "raw",
+          "ok": false,
+          "attempts": [
+            {
+              "id": "b41bc5d7-9eef-4f17-873f-c077095b9bd3",
+              "profileId": "local",
+              "profileLabel": "Local gateway",
+              "baseUrl": "http://localhost:4000",
+              "keyAlias": null,
+              "authScheme": "none",
+              "surface": "chat.completions",
+              "mode": "raw",
+              "request": {
+                "method": "POST",
+                "url": "http://localhost:4000/v1/chat/completions",
+                "path": "/v1/chat/completions",
+                "headers": {
+                  "Accept": "application/json",
+                  "User-Agent": "tokenshield-lab/0.1.0"
+                }
+              },
+              "timings": {
+                "startedAt": "2026-09-08T10:40:35.213Z",
+                "ttfbMs": 0,
+                "totalMs": 38.45
+              },
+              "gateway": {},
+              "verdict": {
+                "kind": "transport-error",
+                "envelope": "none",
+                "detail": "fetch failed → ECONNREFUSED — nothing is listening at http://localhost:4000"
+              },
+              "transportError": "fetch failed → ECONNREFUSED — nothing is listening at http://localhost:4000"
+            }
+          ],
+          "sdkHeaders": []
+        }
+      ]
+    }
+  },
+  {
+    "name": "openai-sdk on an invalid key",
+    "request": {
+      "surfaceId": "chat.completions",
+      "modes": [
+        "openai-sdk"
+      ],
+      "profileId": "prod-us",
+      "keyAlias": "INVALID_ON_PURPOSE",
+      "body": {
+        "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi"
+          }
+        ],
+        "max_tokens": 5
+      },
+      "maxRetries": 0
+    },
+    "status": 200,
+    "response": {
+      "surfaceId": "chat.completions",
+      "outcomes": [
+        {
+          "mode": "openai-sdk",
+          "ok": false,
+          "failure": {
+            "name": "AuthenticationError",
+            "message": "401 invalid API key",
+            "typed": true,
+            "status": 401,
+            "type": "authentication_error",
+            "code": "invalid_api_key"
+          },
+          "attempts": [
+            {
+              "id": "610990b5-f2e5-49e5-876b-e8dedf593029",
+              "profileId": "prod-us",
+              "profileLabel": "Prod US",
+              "baseUrl": "https://gateway.cloudgov.ai",
+              "keyAlias": "INVALID_ON_PURPOSE",
+              "authScheme": "bearer",
+              "surface": "chat.completions",
+              "mode": "openai-sdk",
+              "request": {
+                "method": "POST",
+                "url": "https://gateway.cloudgov.ai/v1/chat/completions",
+                "path": "/v1/chat/completions",
+                "headers": {
+                  "accept": "application/json",
+                  "authorization": "Bearer cg-ak-0000…0000",
+                  "content-length": "156",
+                  "content-type": "application/json",
+                  "user-agent": "OpenAI/JS 4.104.0",
+                  "x-stainless-arch": "x64",
+                  "x-stainless-lang": "js",
+                  "x-stainless-os": "Windows",
+                  "x-stainless-package-version": "4.104.0",
+                  "x-stainless-retry-count": "0",
+                  "x-stainless-runtime": "node",
+                  "x-stainless-runtime-version": "v20.19.4",
+                  "x-stainless-timeout": "600"
+                },
+                "body": {
+                  "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                  "messages": [
+                    {
+                      "role": "user",
+                      "content": "hi"
+                    }
+                  ],
+                  "max_tokens": 5
+                },
+                "bodyText": "{\"model\":\"us.anthropic.claude-haiku-4-5-20251001-v1:0\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}"
+              },
+              "response": {
+                "status": 401,
+                "statusText": "Unauthorized",
+                "headers": {
+                  "connection": "keep-alive",
+                  "content-length": "108",
+                  "content-type": "application/json",
+                  "date": "Tue, 08 Sep 2026 10:43:32 GMT",
+                  "vary": "Origin",
+                  "x-request-id": "bCctVvqbDOuSdxrjcBnuETbsxOBSorXL"
+                },
+                "body": {
+                  "error": {
+                    "message": "invalid API key",
+                    "type": "authentication_error",
+                    "param": null,
+                    "code": "invalid_api_key"
+                  }
+                },
+                "bodyText": "{\"error\":{\"message\":\"invalid API key\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_api_key\"}}\n"
+              },
+              "timings": {
+                "startedAt": "2026-09-08T10:40:35.259Z",
+                "ttfbMs": 1693.48,
+                "totalMs": 1694.37
+              },
+              "gateway": {
+                "requestId": "bCctVvqbDOuSdxrjcBnuETbsxOBSorXL"
+              },
+              "verdict": {
+                "kind": "auth",
+                "envelope": "openai",
+                "detail": "invalid API key",
+                "code": "invalid_api_key",
+                "type": "authentication_error"
+              }
+            }
+          ],
+          "sdkHeaders": [
+            "x-stainless-arch",
+            "x-stainless-lang",
+            "x-stainless-os",
+            "x-stainless-package-version",
+            "x-stainless-retry-count",
+            "x-stainless-runtime",
+            "x-stainless-runtime-version",
+            "x-stainless-timeout"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "raw on an invalid key",
+    "request": {
+      "surfaceId": "chat.completions",
+      "modes": [
+        "raw"
+      ],
+      "profileId": "prod-us",
+      "keyAlias": "INVALID_ON_PURPOSE",
+      "body": {
+        "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi"
+          }
+        ],
+        "max_tokens": 5
+      }
+    },
+    "status": 200,
+    "response": {
+      "surfaceId": "chat.completions",
+      "outcomes": [
+        {
+          "mode": "raw",
+          "ok": false,
+          "result": {
+            "error": {
+              "message": "invalid API key",
+              "type": "authentication_error",
+              "param": null,
+              "code": "invalid_api_key"
+            }
+          },
+          "attempts": [
+            {
+              "id": "db0d22a8-ccf0-494d-82ea-ac8c1369a7b8",
+              "profileId": "prod-us",
+              "profileLabel": "Prod US",
+              "baseUrl": "https://gateway.cloudgov.ai",
+              "keyAlias": "INVALID_ON_PURPOSE",
+              "authScheme": "bearer",
+              "surface": "chat.completions",
+              "mode": "raw",
+              "request": {
+                "method": "POST",
+                "url": "https://gateway.cloudgov.ai/v1/chat/completions",
+                "path": "/v1/chat/completions",
+                "headers": {
+                  "Accept": "application/json",
+                  "User-Agent": "tokenshield-lab/0.1.0",
+                  "Content-Type": "application/json",
+                  "Authorization": "Bearer cg-ak-0000…0000"
+                },
+                "body": {
+                  "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                  "messages": [
+                    {
+                      "role": "user",
+                      "content": "hi"
+                    }
+                  ],
+                  "max_tokens": 5
+                },
+                "bodyText": "{\"model\":\"us.anthropic.claude-haiku-4-5-20251001-v1:0\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}"
+              },
+              "response": {
+                "status": 401,
+                "statusText": "Unauthorized",
+                "headers": {
+                  "connection": "keep-alive",
+                  "content-length": "108",
+                  "content-type": "application/json",
+                  "date": "Tue, 08 Sep 2026 10:43:32 GMT",
+                  "vary": "Origin",
+                  "x-request-id": "LENrpEArOwDRkqhSRzXrbOQJSclmoIOf"
+                },
+                "body": {
+                  "error": {
+                    "message": "invalid API key",
+                    "type": "authentication_error",
+                    "param": null,
+                    "code": "invalid_api_key"
+                  }
+                },
+                "bodyText": "{\"error\":{\"message\":\"invalid API key\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_api_key\"}}\n"
+              },
+              "timings": {
+                "startedAt": "2026-09-08T10:40:36.978Z",
+                "ttfbMs": 286.82,
+                "totalMs": 287.34
+              },
+              "gateway": {
+                "requestId": "LENrpEArOwDRkqhSRzXrbOQJSclmoIOf"
+              },
+              "verdict": {
+                "kind": "auth",
+                "envelope": "openai",
+                "detail": "invalid API key",
+                "code": "invalid_api_key",
+                "type": "authentication_error"
+              }
+            }
+          ],
+          "sdkHeaders": []
+        }
+      ]
+    }
+  },
+  {
+    "name": "both modes at once, invalid key",
+    "request": {
+      "surfaceId": "chat.completions",
+      "modes": [
+        "raw",
+        "openai-sdk"
+      ],
+      "profileId": "prod-us",
+      "keyAlias": "INVALID_ON_PURPOSE",
+      "body": {
+        "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi"
+          }
+        ],
+        "max_tokens": 5
+      },
+      "maxRetries": 0
+    },
+    "status": 200,
+    "response": {
+      "surfaceId": "chat.completions",
+      "outcomes": [
+        {
+          "mode": "raw",
+          "ok": false,
+          "result": {
+            "error": {
+              "message": "invalid API key",
+              "type": "authentication_error",
+              "param": null,
+              "code": "invalid_api_key"
+            }
+          },
+          "attempts": [
+            {
+              "id": "d7056600-9072-41a4-a951-c223c78bbee0",
+              "profileId": "prod-us",
+              "profileLabel": "Prod US",
+              "baseUrl": "https://gateway.cloudgov.ai",
+              "keyAlias": "INVALID_ON_PURPOSE",
+              "authScheme": "bearer",
+              "surface": "chat.completions",
+              "mode": "raw",
+              "request": {
+                "method": "POST",
+                "url": "https://gateway.cloudgov.ai/v1/chat/completions",
+                "path": "/v1/chat/completions",
+                "headers": {
+                  "Accept": "application/json",
+                  "User-Agent": "tokenshield-lab/0.1.0",
+                  "Content-Type": "application/json",
+                  "Authorization": "Bearer cg-ak-0000…0000"
+                },
+                "body": {
+                  "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                  "messages": [
+                    {
+                      "role": "user",
+                      "content": "hi"
+                    }
+                  ],
+                  "max_tokens": 5
+                },
+                "bodyText": "{\"model\":\"us.anthropic.claude-haiku-4-5-20251001-v1:0\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}"
+              },
+              "response": {
+                "status": 401,
+                "statusText": "Unauthorized",
+                "headers": {
+                  "connection": "keep-alive",
+                  "content-length": "108",
+                  "content-type": "application/json",
+                  "date": "Tue, 08 Sep 2026 10:43:32 GMT",
+                  "vary": "Origin",
+                  "x-request-id": "wvRckcZyEQqomKSMgoLuknvTknijWXGv"
+                },
+                "body": {
+                  "error": {
+                    "message": "invalid API key",
+                    "type": "authentication_error",
+                    "param": null,
+                    "code": "invalid_api_key"
+                  }
+                },
+                "bodyText": "{\"error\":{\"message\":\"invalid API key\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_api_key\"}}\n"
+              },
+              "timings": {
+                "startedAt": "2026-09-08T10:40:37.272Z",
+                "ttfbMs": 293.19,
+                "totalMs": 293.71
+              },
+              "gateway": {
+                "requestId": "wvRckcZyEQqomKSMgoLuknvTknijWXGv"
+              },
+              "verdict": {
+                "kind": "auth",
+                "envelope": "openai",
+                "detail": "invalid API key",
+                "code": "invalid_api_key",
+                "type": "authentication_error"
+              }
+            }
+          ],
+          "sdkHeaders": []
+        },
+        {
+          "mode": "openai-sdk",
+          "ok": false,
+          "failure": {
+            "name": "AuthenticationError",
+            "message": "401 invalid API key",
+            "typed": true,
+            "status": 401,
+            "type": "authentication_error",
+            "code": "invalid_api_key"
+          },
+          "attempts": [
+            {
+              "id": "4c290965-1e35-40f9-9764-0bd3849f03b0",
+              "profileId": "prod-us",
+              "profileLabel": "Prod US",
+              "baseUrl": "https://gateway.cloudgov.ai",
+              "keyAlias": "INVALID_ON_PURPOSE",
+              "authScheme": "bearer",
+              "surface": "chat.completions",
+              "mode": "openai-sdk",
+              "request": {
+                "method": "POST",
+                "url": "https://gateway.cloudgov.ai/v1/chat/completions",
+                "path": "/v1/chat/completions",
+                "headers": {
+                  "accept": "application/json",
+                  "authorization": "Bearer cg-ak-0000…0000",
+                  "content-length": "156",
+                  "content-type": "application/json",
+                  "user-agent": "OpenAI/JS 4.104.0",
+                  "x-stainless-arch": "x64",
+                  "x-stainless-lang": "js",
+                  "x-stainless-os": "Windows",
+                  "x-stainless-package-version": "4.104.0",
+                  "x-stainless-retry-count": "0",
+                  "x-stainless-runtime": "node",
+                  "x-stainless-runtime-version": "v20.19.4",
+                  "x-stainless-timeout": "600"
+                },
+                "body": {
+                  "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                  "messages": [
+                    {
+                      "role": "user",
+                      "content": "hi"
+                    }
+                  ],
+                  "max_tokens": 5
+                },
+                "bodyText": "{\"model\":\"us.anthropic.claude-haiku-4-5-20251001-v1:0\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}"
+              },
+              "response": {
+                "status": 401,
+                "statusText": "Unauthorized",
+                "headers": {
+                  "connection": "keep-alive",
+                  "content-length": "108",
+                  "content-type": "application/json",
+                  "date": "Tue, 08 Sep 2026 10:43:34 GMT",
+                  "vary": "Origin",
+                  "x-request-id": "SPNMcIRmHqWXyEVOitintznYbtJbIrQw"
+                },
+                "body": {
+                  "error": {
+                    "message": "invalid API key",
+                    "type": "authentication_error",
+                    "param": null,
+                    "code": "invalid_api_key"
+                  }
+                },
+                "bodyText": "{\"error\":{\"message\":\"invalid API key\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_api_key\"}}\n"
+              },
+              "timings": {
+                "startedAt": "2026-09-08T10:40:37.567Z",
+                "ttfbMs": 1777.13,
+                "totalMs": 1777.32
+              },
+              "gateway": {
+                "requestId": "SPNMcIRmHqWXyEVOitintznYbtJbIrQw"
+              },
+              "verdict": {
+                "kind": "auth",
+                "envelope": "openai",
+                "detail": "invalid API key",
+                "code": "invalid_api_key",
+                "type": "authentication_error"
+              }
+            }
+          ],
+          "sdkHeaders": [
+            "x-stainless-arch",
+            "x-stainless-lang",
+            "x-stainless-os",
+            "x-stainless-package-version",
+            "x-stainless-retry-count",
+            "x-stainless-runtime",
+            "x-stainless-runtime-version",
+            "x-stainless-timeout"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "openai-sdk with a malformed body",
+    "request": {
+      "surfaceId": "chat.completions",
+      "modes": [
+        "openai-sdk"
+      ],
+      "profileId": "prod-us",
+      "keyAlias": "INVALID_ON_PURPOSE",
+      "body": {
+        "model": 12345,
+        "messages": "not-a-list"
+      },
+      "maxRetries": 0
+    },
+    "status": 200,
+    "response": {
+      "surfaceId": "chat.completions",
+      "outcomes": [
+        {
+          "mode": "openai-sdk",
+          "ok": false,
+          "failure": {
+            "name": "AuthenticationError",
+            "message": "401 invalid API key",
+            "typed": true,
+            "status": 401,
+            "type": "authentication_error",
+            "code": "invalid_api_key"
+          },
+          "attempts": [
+            {
+              "id": "f3c2b71b-826d-4b32-9763-b641a2c9e823",
+              "profileId": "prod-us",
+              "profileLabel": "Prod US",
+              "baseUrl": "https://gateway.cloudgov.ai",
+              "keyAlias": "INVALID_ON_PURPOSE",
+              "authScheme": "bearer",
+              "surface": "chat.completions",
+              "mode": "openai-sdk",
+              "request": {
+                "method": "POST",
+                "url": "https://gateway.cloudgov.ai/v1/chat/completions",
+                "path": "/v1/chat/completions",
+                "headers": {
+                  "accept": "application/json",
+                  "authorization": "Bearer cg-ak-0000…0000",
+                  "content-length": "48",
+                  "content-type": "application/json",
+                  "user-agent": "OpenAI/JS 4.104.0",
+                  "x-stainless-arch": "x64",
+                  "x-stainless-lang": "js",
+                  "x-stainless-os": "Windows",
+                  "x-stainless-package-version": "4.104.0",
+                  "x-stainless-retry-count": "0",
+                  "x-stainless-runtime": "node",
+                  "x-stainless-runtime-version": "v20.19.4",
+                  "x-stainless-timeout": "600"
+                },
+                "body": {
+                  "model": 12345,
+                  "messages": "not-a-list"
+                },
+                "bodyText": "{\"model\":12345,\"messages\":\"not-a-list\"}"
+              },
+              "response": {
+                "status": 401,
+                "statusText": "Unauthorized",
+                "headers": {
+                  "connection": "keep-alive",
+                  "content-length": "108",
+                  "content-type": "application/json",
+                  "date": "Tue, 08 Sep 2026 10:43:34 GMT",
+                  "vary": "Origin",
+                  "x-request-id": "ZlPBkbrBOBGObStacswvfozZPLuBMGiJ"
+                },
+                "body": {
+                  "error": {
+                    "message": "invalid API key",
+                    "type": "authentication_error",
+                    "param": null,
+                    "code": "invalid_api_key"
+                  }
+                },
+                "bodyText": "{\"error\":{\"message\":\"invalid API key\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_api_key\"}}\n"
+              },
+              "timings": {
+                "startedAt": "2026-09-08T10:40:39.354Z",
+                "ttfbMs": 418.88,
+                "totalMs": 419.2
+              },
+              "gateway": {
+                "requestId": "ZlPBkbrBOBGObStacswvfozZPLuBMGiJ"
+              },
+              "verdict": {
+                "kind": "auth",
+                "envelope": "openai",
+                "detail": "invalid API key",
+                "code": "invalid_api_key",
+                "type": "authentication_error"
+              }
+            }
+          ],
+          "sdkHeaders": [
+            "x-stainless-arch",
+            "x-stainless-lang",
+            "x-stainless-os",
+            "x-stainless-package-version",
+            "x-stainless-retry-count",
+            "x-stainless-runtime",
+            "x-stainless-runtime-version",
+            "x-stainless-timeout"
+          ]
+        }
+      ]
+    }
+  }
+]

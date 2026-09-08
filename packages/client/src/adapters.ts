@@ -18,17 +18,36 @@
  *     Exchange, so a single `create()` call can produce three rows — which is
  *     exactly what a customer's bill and the gateway's usage table will show.
  *
- * The mechanism is a `fetch` implementation handed to the SDK's constructor. It
- * records through `Transport.sendRaw`, so an SDK call and a hand-built call
- * produce the same Exchange shape and are directly comparable. Nothing rewrites
- * the SDK's request: seeing what it constructs is the point.
+ * The mechanism is a `fetch` implementation handed to the SDK's constructor.
+ * Nothing rewrites the SDK's request: seeing what it constructs is the point.
+ *
+ * ## What this module does NOT do, since 2026-09-08 (D-7)
+ *
+ * It used to record through `Transport.sendRaw`, which produced a finished
+ * `Exchange` — classified, redacted, timed. That was convenient and it was the
+ * single edge binding this module to `transport.ts`, and through it to
+ * `classify.ts` and `signal.ts`: **1,439 lines that the Python engine also
+ * owns**. Two implementations of "what does this response mean", policed by
+ * comparing their output, is the mistake that cost 1,826 lines in the aborted
+ * Go migration.
+ *
+ * So the boundary moved. This module now performs the request with plain
+ * `fetch` and emits a **`ProbeAttempt`** — what was sent, what came back, and
+ * how long it took, with credential headers already masked. Python turns that
+ * into an `Exchange`. Verdicts and deep redaction exist once.
+ *
+ * The masking happens **here**, before the record leaves the process, so no
+ * plaintext credential crosses the pipe to Python. D-7 budgeted a duplicated
+ * ~20-line masker for this and none was needed: `redact.ts` stays in the
+ * browser bundle anyway (the web's `toCurl` imports `isSecretHeader`), so the
+ * probe imports the same `redactHeaders` the rest of the package uses.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 
-import { Transport } from './transport.js';
-import type { Exchange, ExchangeMode, Profile } from './types.js';
+import { redactHeaders } from './redact.js';
+import type { Exchange, ExchangeMode } from './types.js';
 // `sdkModesFor` used to live here. It moved to surfaces.ts on 2026-09-08:
 // the web imports it, and importing it from THIS module bound the browser
 // build to the vendor SDKs in the static graph — which is what prevented
@@ -81,9 +100,57 @@ const OUR_HEADERS = new Set([
   'accept-encoding',
 ]);
 
+/**
+ * One HTTP attempt, exactly as observed, with credentials already masked.
+ *
+ * Deliberately NOT an `Exchange`. An Exchange carries a verdict, a gateway
+ * signal and a redacted body — all derived, and all owned by the Python engine.
+ * This type is the observation: the fields nobody can compute after the fact
+ * because only the process that made the call ever saw them.
+ *
+ * `bodyText` is kept alongside `body` because they are different evidence. A
+ * body that failed to parse still has text, and the exact bytes matter when the
+ * question is what the SDK serialised.
+ */
+export interface ProbeAttempt {
+  surface: string;
+  mode: ExchangeMode;
+  method: string;
+  url: string;
+  /** Already through `redactHeaders`. No plaintext credential leaves here. */
+  requestHeaders: Record<string, string>;
+  bodyText?: string;
+  body?: unknown;
+  status?: number;
+  statusText?: string;
+  responseHeaders?: Record<string, string>;
+  responseBodyText?: string;
+  /** Set when no response arrived at all. */
+  transportError?: string;
+  startedAt: string;
+  /** Time to headers, and to the end of the body. Different numbers. */
+  ttfbMs: number;
+  totalMs: number;
+}
+
+/**
+ * What the probe emits for one `create()` call.
+ *
+ * `attempts` is plural because both SDKs retry on their own schedule, and each
+ * retry is a separate request the gateway will bill for.
+ */
+export interface ProbeOutcome {
+  mode: Exclude<SdkMode, 'raw'>;
+  ok: boolean;
+  result?: unknown;
+  failure?: SdkFailure;
+  attempts: ProbeAttempt[];
+  sdkHeaders: string[];
+}
+
 export interface AdapterInit {
-  profile: Profile;
-  keyAlias: string | null;
+  /** The gateway origin, without a trailing slash and without `/v1`. */
+  baseUrl: string;
   secret: string | null;
   timeoutMs?: number;
   /** Left at 0 by default so one call is one attempt unless retries are the subject. */
@@ -93,10 +160,10 @@ export interface AdapterInit {
 /**
  * Builds the fetch the SDK will use, plus the array it records into.
  *
- * The SDK is handed back a reconstructed `Response`, because `sendRaw` has
- * already read the body to record it and a stream can only be read once.
- * `content-encoding` and `content-length` are dropped from the copy: the body
- * we hold is already decoded, so leaving them would have the SDK try to
+ * The SDK is handed back a reconstructed `Response`, because the body has
+ * already been read to record it and a body can only be read once.
+ * `content-encoding` and `content-length` are dropped from the copy: what we
+ * hold is already decoded, so leaving them would have the SDK try to
  * decompress plain text.
  */
 type FetchLike = (input: unknown, init?: unknown) => Promise<Response>;
@@ -134,18 +201,18 @@ function urlOf(input: unknown): string {
 }
 
 function recordingFetch(
-  transport: Transport,
   surface: string,
   mode: ExchangeMode,
-  attempts: Exchange[],
+  attempts: ProbeAttempt[],
   sdkHeaders: Set<string>,
+  timeoutMs: number,
 ): FetchLike {
   return async (input: unknown, rawInit?: unknown): Promise<Response> => {
     const init = initOf(rawInit);
     const url = urlOf(input);
-    const headers: Record<string, string> = {};
+    const sent: Record<string, string> = {};
     new Headers(init.headers ?? {}).forEach((value, key) => {
-      headers[key] = value;
+      sent[key] = value;
       if (!OUR_HEADERS.has(key.toLowerCase())) sdkHeaders.add(key.toLowerCase());
     });
 
@@ -159,34 +226,85 @@ function recordingFetch(
       }
     }
 
-    const exchange = await transport.sendRaw({
+    const method = (init.method ?? 'GET').toUpperCase();
+    const startedAt = new Date().toISOString();
+    const t0 = performance.now();
+
+    // Masked BEFORE the record exists, not before it is emitted. A raw value
+    // that is never written down cannot leak from a later code path.
+    const attempt: ProbeAttempt = {
       surface,
       mode,
-      method: (init.method ?? 'GET').toUpperCase(),
+      method,
       url,
-      headers,
+      requestHeaders: redactHeaders(sent),
       ...(bodyText !== undefined ? { bodyText } : {}),
       ...(parsedBody !== undefined ? { body: parsedBody } : {}),
-    });
-    attempts.push(exchange);
+      startedAt,
+      ttfbMs: 0,
+      totalMs: 0,
+    };
 
-    if (exchange.transportError !== undefined || exchange.response === undefined) {
-      throw new Error(exchange.transportError ?? 'no response');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: sent,
+        ...(bodyText !== undefined ? { body: bodyText } : {}),
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+      attempt.ttfbMs = round2(performance.now() - t0);
+
+      const text = await res.text();
+      attempt.totalMs = round2(performance.now() - t0);
+      attempt.status = res.status;
+      attempt.statusText = res.statusText;
+
+      const responseHeaders: Record<string, string> = {};
+      res.headers.forEach((value, key) => {
+        responseHeaders[key.toLowerCase()] = value;
+      });
+      attempt.responseHeaders = responseHeaders;
+      if (text !== '') attempt.responseBodyText = text;
+      attempts.push(attempt);
+
+      const replayHeaders = new Headers();
+      for (const [name, value] of Object.entries(responseHeaders)) {
+        if (name === 'content-encoding' || name === 'content-length') continue;
+        replayHeaders.set(name, value);
+      }
+      return new Response(text, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: replayHeaders,
+      });
+    } catch (error) {
+      attempt.totalMs = round2(performance.now() - t0);
+      attempt.transportError =
+        controller.signal.aborted
+          ? `Timed out after ${timeoutMs}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      attempts.push(attempt);
+      // Rethrown so the SDK's own retry and error classification run, which is
+      // the whole point of driving the real SDK.
+      throw error;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const replayHeaders = new Headers();
-    for (const [name, value] of Object.entries(exchange.response.headers)) {
-      const lower = name.toLowerCase();
-      if (lower === 'content-encoding' || lower === 'content-length') continue;
-      replayHeaders.set(name, value);
-    }
-
-    return new Response(exchange.response.bodyText ?? '', {
-      status: exchange.response.status,
-      statusText: exchange.response.statusText,
-      headers: replayHeaders,
-    });
   };
+}
+
+/**
+ * Half-up to two decimals, which is what `Math.round` does and what the Python
+ * side reproduces on purpose. Kept here so a timing recorded by the probe and
+ * one recorded by the engine are the same number.
+ */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function describeFailure(error: unknown): SdkFailure {
@@ -248,17 +366,11 @@ export async function runWithSdk(
   surfaceId: string,
   body: unknown,
   init: AdapterInit,
-): Promise<SdkOutcome> {
-  const transport = new Transport({
-    profile: init.profile,
-    keyAlias: init.keyAlias,
-    secret: init.secret,
-    ...(init.timeoutMs !== undefined ? { timeoutMs: init.timeoutMs } : {}),
-  });
-
-  const attempts: Exchange[] = [];
+): Promise<ProbeOutcome> {
+  const attempts: ProbeAttempt[] = [];
   const sdkHeaders = new Set<string>();
-  const fetchImpl = recordingFetch(transport, surfaceId, mode, attempts, sdkHeaders);
+  const timeoutMs = init.timeoutMs ?? 60_000;
+  const fetchImpl = recordingFetch(surfaceId, mode, attempts, sdkHeaders, timeoutMs);
   const maxRetries = init.maxRetries ?? 0;
   const apiKey = init.secret ?? 'missing-key';
 
@@ -269,7 +381,7 @@ export async function runWithSdk(
             new OpenAI({
               apiKey,
               // The OpenAI SDK appends paths to a baseURL that already ends /v1.
-              baseURL: `${init.profile.baseUrl.replace(/\/+$/, '')}/v1`,
+              baseURL: `${init.baseUrl.replace(/\/+$/, '')}/v1`,
               maxRetries,
               fetch: fetchImpl as unknown as OpenAIFetch,
             }),
@@ -280,7 +392,7 @@ export async function runWithSdk(
             new Anthropic({
               apiKey,
               // The Anthropic SDK adds /v1 itself.
-              baseURL: init.profile.baseUrl.replace(/\/+$/, ''),
+              baseURL: init.baseUrl.replace(/\/+$/, ''),
               maxRetries,
               fetch: fetchImpl as unknown as AnthropicFetch,
             }),
