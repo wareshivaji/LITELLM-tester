@@ -1,6 +1,6 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–7 complete**; **8.1 done — the Node backend is retired** (2026-09-08). **Every endpoint is on the Python
+**Status:** **Phases 0–7 complete**; **8.1 and 8.2 done — the Node backend is retired and 1,164 dead lines are gone** (2026-09-08). Only **8.3** remains. **Every endpoint is on the Python
 engine except `/api/compare`**, which D-6 keeps in Node permanently. `lab diff` runs
 62 cases, all clean, plus **three** parity scripts — the SSE parser on a recorded byte
 fixture, all 16 scenario bodies, and `fields.ts` against LiteLLM in-process. 139
@@ -8,7 +8,7 @@ engine+reference tests, 306 collected across the compat suite. 0.2 withdrawn (D-
 every phase re-scoped after testing its premise, twice a documented deferral was
 caught by the gate at the moment it came due, and in Phase 7 two of three steps
 dissolved on inspection.
-**Next: Phase 8.2 — delete the now-dead `packages/client` modules; then 8.3, one README.**
+**Next: Phase 8.3 — one README covering both repos, and the stale `service` name.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -502,7 +502,7 @@ does not exist.
 | Step | Action | Gate |
 |---|---|---|
 | 1.1 | ~~Design `cases/*.json` + JSON Schema~~ **dropped** — nothing needs a language-neutral format; only the server reads cases | n/a |
-| 1.2 | Make `Scenarios.tsx` fetch `/api/scenarios/suites` instead of importing `SUITES`, matching `PromptLab`. New `ScenarioSuiteInfo` in `api.ts` — deliberately **not** the client package's `Scenario` type, which carries a `body` closure and an `expect` that are the engine's business and do not survive JSON | **DONE 2026-09-07** — 0 type errors, 26 test files pass, eslint clean; UI verified live: 4 suites with 6/4/4/2 scenarios, descriptions and spend counts computed from fetched data, switching suites works |
+| 1.2 | Make `Scenarios.tsx` fetch `/api/scenarios/suites` instead of importing `SUITES`, matching `PromptLab`. New `ScenarioSuiteInfo` in `api.ts` — deliberately **not** the client package's `Scenario` type, which carries a `body` closure and an `expect` that are the engine's business and do not survive JSON | **DONE 2026-09-07** — 0 type errors, TypeScript suites pass, eslint clean; UI verified live: 4 suites with 6/4/4/2 scenarios, descriptions and spend counts computed from fetched data, switching suites works |
 | 1.3 | ~~Python reads the same files~~ **dropped** with 1.1 | n/a |
 
 **Measurable side effect:** the web bundle fell from 338.29 kB to 330.65 kB. The
@@ -931,7 +931,7 @@ Stated plainly, because it is the irreversible part. **`lab diff -a node -b
 python` can no longer run** — there is no second backend. `testdata/migration-cases.json`
 (80 cases) becomes a historical artefact: it was green immediately before the
 deletion, and that run is the last one there will ever be. The live gates are now
-**four parity scripts, 156 engine tests and 26 TypeScript test files**. That is a
+**four parity scripts, 170 engine tests and 9 TypeScript suites (318 assertions)**. That is a
 real reduction in safety net, which is why the plan called this step irreversible
 and gated it on a full green session.
 
@@ -1028,7 +1028,61 @@ difference; both entries disappear with the Node backend. Separately, `mcp/brows
 differed once on a transport timeout from Node to a remote gateway — re-run
 twice, clean both times, so it was left alone rather than declared volatile. **A
 volatile entry for a flake is how a real defect gets hidden.**
-| 8.2 | Delete what the JS-SDK probe does not need from `packages/client`. **Measured 2026-09-08, and the estimate below it was wrong** — see the note. | typecheck, tests, eslint clean |
+| 8.2 | Delete what the JS-SDK probe does not need from `packages/client`. **DONE 2026-09-08.** **Measured first, and the plan's own estimate was wrong** — see the notes. | typecheck, tests, eslint clean |
+
+#### 8.2 — what actually went
+
+**1,164 lines, five modules.** `packages/client` is **21 modules / 6,253 lines →
+16 modules / 5,089 lines**.
+
+| Module | Lines | Why it was dead |
+|---|---|---|
+| `transport.ts` | 616 | `adapters.ts` does its own `fetch` since D-7; `routes.ts` is gone |
+| `client.ts` | 211 | only `preflight.ts` and the deleted `routes.ts` used it |
+| `classify.ts` | 193 | the verdict exists once now, in Python |
+| `signal.ts` | 67 | only `transport.ts` used it |
+| `preflight.ts` | 282 | see below — unlocked by moving one interface |
+
+The measurement predicted 1,087 lines across four modules and was **exactly
+right** about those four. `preflight.ts` came as well, and that is the
+type-extraction work the earlier note deferred, done for one module: its entire
+surviving purpose was the `McpEntitlement` interface, because the web's
+`runPreflight` at `App.tsx:142` is its own local `useCallback` and not the
+imported function at all. Moving one interface freed 282 lines.
+
+`McpEntitlement` went to `mcp.ts`, not `types.ts`. `types.ts` was tried before
+and rejected for a recorded reason — `McpServerWithWires` lives in `mcp.ts`,
+which already imports from `types.ts`, so the reference would cycle. `mcp.ts` is
+its natural home regardless: it is a fact about MCP and every other one is
+there.
+
+**Deleting a test file needed justifying, not noting.** `classify.test.mjs` was
+22 real assertions. The coverage *moved*: Python's `test_classify.py` has 15 test
+functions over the same ground and more, and every specific case the TypeScript
+pinned was **checked present first** — the three envelopes, the flat shape's
+code-not-message rule, both 429s, budget detection by `budget_name` with no
+`type`, and `detect_envelope` on a success body and on a non-object. Python is
+now the only classifier, so its tests are the ones that can fail for a real
+reason.
+
+**The bundle did not change: 330.60 kB before and after.** Exactly as the
+pre-measurement predicted — Vite had already tree-shaken all of it. This was
+never a size problem and the note above said so; it was a *deletion* problem,
+and the fix was severing static edges.
+
+**A figure I had wrong three times, corrected in this document.** I reported "26
+TypeScript test files" repeatedly. `npm test` runs the suites in sequence and
+each prints its own tally — 26 was the **last suite's assertion count**. The real
+numbers are **9 suites, 318 assertions** (10 before `classify.test.mjs` went).
+Corrected wherever it appears rather than only going forward, because the wrong
+number sits in the record as evidence that a gate passed.
+
+Verified after the deletion: typecheck clean, eslint 0 problems, all 9 suites
+pass, web bundle builds, all four parity gates green, and the UI re-checked in
+the browser — Connect and SDK compare both render. That last check mattered: the
+dev server had cached HMR state from the deletion and reported a dozen "failed
+to reload" errors, which a successful `npm run build` would have hidden. The
+production build passing is not the same claim as the app running.
 
 #### 8.2, measured rather than estimated
 
@@ -1082,7 +1136,7 @@ session.** Retiring the fallback is the irreversible step.
 
 **Satisfied 2026-09-08.** Phases 3–6 completed 09-07 and were re-verified green
 on 09-08 from a clean start of both backends: `lab diff` 62/0 (before 8.1a added
-18 cases), 139 engine tests, 26 TypeScript test files, three parity scripts,
+18 cases), 139 engine tests, 10 TypeScript suites, three parity scripts,
 typecheck and eslint clean.
 
 ---
@@ -1144,6 +1198,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-08 | **8.2** | **1,164 lines deleted from `packages/client`** — `transport` (616), `preflight` (282), `client` (211), `classify` (193), `signal` (67). 21 modules / 6,253 lines → **16 / 5,089**. The measurement's four dead modules were exactly right; `preflight` came too, because its whole surviving purpose was the `McpEntitlement` interface — the web's `runPreflight` is its own local `useCallback`, not the import. That interface moved to `mcp.ts` (not `types.ts`, which would cycle). `classify.test.mjs` deleted after checking every case it pinned is present in Python's `test_classify.py`. **Bundle unchanged at 330.60 kB**, as predicted — the modules were already tree-shaken, so this was a deletion fix and never a size one. Also corrects "26 TypeScript test files", which I reported three times and which was the last suite's assertion count: really **9 suites, 318 assertions**. | `packages/client/src/*`, `packages/client/package.json`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | **8.1b** | **The Node backend is retired.** 2,182 lines deleted across six modules; what remains of Node is one 180-line `probe.ts`. `packages/server` → `packages/probe`, `fastify` dependency gone, web proxy default 8787 → 8801. `/api/compare` is Python spawning the probe over stdin; verified in the browser end to end — vite → engine → subprocess → real `openai` package → gateway → Python's classifier → UI, both clients 401 on a dummy key at zero spend. **D-7 refined: the duplicated masker it budgeted for is zero**, because `redact.ts` stays in the browser bundle for `toCurl` and the probe imports the same `redactHeaders`. New gate `scripts/compare-parity.mjs`, 8 cases structure-matched against a recorded reference — needed because I changed the reference implementation before capturing it, and had to revert to recover it. **`lab diff` node-vs-python can no longer run**: the 80-case file is now historical, and the live gates are 4 parity scripts + 156 engine tests + 26 TS test files. | `packages/probe/*`, `packages/client/src/{adapters,index}.ts`, `packages/web/vite.config.ts`, `scripts/compare-parity.mjs`, `testdata/compare-reference.json`, `tokenshield-compat-tests/engine/{probe,surfaces,app}.py`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | **8.1a** | **Mock MCP server ported to Python — a Phase 8 blocker the plan never recorded.** Node registers **31** routes, not the 27 the plan claimed; the four `mock-mcp` routes were the last it served alone, and retiring it would have pointed every `declared`-mode MCP case at a dead URL. The port found a real defect in code ported six days earlier: `summarise_credential_exposure` answered a different question from its TypeScript namesake and could not see a gateway key in a non-credential header — the exact leak the mock exists to detect. It diverged silently because its only consumer had not been ported yet. Now on the TS contract, parity-checked over 8 header sets. **`lab diff` 80 same, 0 differ** (was 62 cases); 156 engine tests (was 139). `hang` mode, the bounded ring and the no-leak property are asserted rather than diffed, each for a reason the differ cannot overcome. | `tokenshield-compat-tests/engine/{mock_mcp,mcp,redact,config,app}.py`, `engine/tests/test_mock_mcp.py`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | 8 (pre) | **Measured `packages/client` before deleting from it, and the plan's own 8.2 estimate was wrong** — 5,700 lines claimed, **1,087** actually dead post-8.1 and **2,814** with types extracted. The gap is the web's runtime closure (3,495 lines), which the estimate never counted. Nothing is deletable *today*: `adapters` still imports `Transport`, and `client.ts` is still used by `preflight` and the Node `routes.ts`. Prerequisite landed: **`sdkModesFor` moved `adapters.ts` -> `surfaces.ts`**, severing the web's static edge to the vendor SDKs (the bundle was already clean — this frees a *deletion*, not bytes), and `SdkMode` collapsed to an alias of `ExchangeMode`. | `packages/client/src/{adapters,surfaces,index}.ts`, `docs/CONVERGENCE.md` |

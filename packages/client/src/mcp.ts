@@ -764,3 +764,24 @@ export function offeredToolNames(body: unknown): string[] {
   }
   return [...names].sort();
 }
+
+
+/**
+ * What MCP this key may reach, with each tool's wire name.
+ *
+ * The wire name is derived rather than reported — it appears in no API
+ * response, yet it is the only name the model sees and the only one a
+ * forced-call test can use. See `wireNameFor`.
+ *
+ * Moved here from `preflight.ts` on 2026-09-08, when Phase 8.2 deleted that
+ * module. It could not go in `types.ts` — that was tried and recorded in
+ * `Connect.tsx`: `McpServerWithWires` lives here, and this file already
+ * imports from `types.ts`, so the reference would cycle. It belongs here
+ * anyway; it is a fact about MCP, and every other one is in this file.
+ */
+export interface McpEntitlement {
+  servers: McpServerWithWires[];
+  totals: { allow: number; block: number; ask: number; unknown: number };
+  /** Tools actually usable — the number that decides whether this works. */
+  usable: number;
+}

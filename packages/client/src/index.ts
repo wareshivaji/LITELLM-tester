@@ -1,6 +1,21 @@
+/**
+ * The lab client package.
+ *
+ * ## What is NOT here any more, since 2026-09-08 (Phase 8.2)
+ *
+ * `classify`, `signal`, `transport` and `client` were deleted — 1,087 lines.
+ * They were the HTTP-and-verdict stack, and the Python engine owns that
+ * outright now: it serves every endpoint, and `adapters.ts` does its own
+ * `fetch` since D-7 rather than borrowing `Transport`. Keeping a second
+ * implementation to be "kept honest" against the first is the mistake that cost
+ * 1,826 lines in the aborted Go migration.
+ *
+ * What survives here is what has exactly one implementation: the browser's own
+ * helpers (surfaces, fields, probes, tools, mcp, stream analysis, curl,
+ * governance), the redaction the browser and the probe both need, the SSE
+ * parser the web uses directly, and the vendor-SDK adapter that IS the probe.
+ */
 export * from './types.js';
-export { classify, detectEnvelope, normalizeError, verdictLabel } from './classify.js';
-export { parseBudget, parseGatewaySignal } from './signal.js';
 export {
   buildPromptBody,
   comparePromptOutcomes,
@@ -31,12 +46,6 @@ export {
   scrubText,
   summariseCredentialExposure,
 } from './redact.js';
-export { LAB_USER_AGENT, Transport } from './transport.js';
-export type { SendRequest, TransportInit } from './transport.js';
-export { extractModels, TokenShieldClient } from './client.js';
-export { runPreflight } from './preflight.js';
-export type { McpEntitlement } from './preflight.js';
-export type { PreflightOptions } from './preflight.js';
 export {
   INSTRUMENTS,
   isStreamable,
@@ -60,7 +69,6 @@ export { SSEParser } from './sse.js';
 export { analyseStream, checkResponsesLifecycle, gapMs, readStreamDelta } from './stream.js';
 export type { LifecycleReport } from './stream.js';
 export type { StreamAnalysis, StreamAnomaly } from './stream.js';
-export type { StreamRequest } from './transport.js';
 export {
   runWithSdk,
 } from './adapters.js';
@@ -161,3 +169,4 @@ export type {
   Suite,
 } from './scenarios.js';
 export type { Gate } from './governance.js';
+export type { McpEntitlement } from './mcp.js';
