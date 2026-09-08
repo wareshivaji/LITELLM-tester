@@ -23,7 +23,13 @@
   {
     "Name": "prompt cases",
     "Method": "GET",
-    "Path": "/api/prompts/cases"
+    "Path": "/api/prompts/cases",
+    "Volatile": [
+      {
+        "Pattern": "mcpServerUrl",
+        "Why": "each backend serves its own mock MCP and advertises its own origin; Node's is :8787 and the engine's is :8801. Correct on both sides, and the entry disappears with the Node backend"
+      }
+    ]
   },
   {
     "Name": "runs (default)",
@@ -460,7 +466,13 @@
       "scheme": "bearer",
       "dryRun": true,
       "model": "bedrock-claude-haiku-4.5"
-    }
+    },
+    "Volatile": [
+      {
+        "Pattern": "requests.*.body.tools.*.server_url",
+        "Why": "each backend serves its own mock MCP and advertises its own origin; Node's is :8787 and the engine's is :8801. Correct on both sides, and the entry disappears with the Node backend"
+      }
+    ]
   },
   {
     "Name": "prompts/run: no key -> 400",
@@ -757,5 +769,188 @@
         "Why": "a fresh uuid per exchange"
       }
     ]
+  },
+  {
+    "Name": "mock-mcp: reset before recording",
+    "Method": "POST",
+    "Path": "/api/mock-mcp/reset"
+  },
+  {
+    "Name": "mock-mcp: the log is empty after a reset",
+    "Method": "GET",
+    "Path": "/api/mock-mcp/requests",
+    "Volatile": [
+      {
+        "Pattern": "baseUrl",
+        "Why": "each backend serves its own mock MCP and advertises its own origin; Node's is :8787 and the engine's is :8801. Correct on both sides, and the entry disappears with the Node backend"
+      }
+    ]
+  },
+  {
+    "Name": "mock-mcp: initialize assigns a session",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize"
+    }
+  },
+  {
+    "Name": "mock-mcp: notifications/initialized is a bare 202",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": null,
+      "method": "notifications/initialized"
+    }
+  },
+  {
+    "Name": "mock-mcp: tools/list advertises both tools",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/list"
+    }
+  },
+  {
+    "Name": "mock-mcp: tools/call returns the canned result",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/call",
+      "params": {
+        "name": "lab_weather",
+        "arguments": {
+          "city": "Pune"
+        }
+      }
+    }
+  },
+  {
+    "Name": "mock-mcp: an unknown tool is invalid_params (-32602)",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "method": "tools/call",
+      "params": {
+        "name": "nope"
+      }
+    }
+  },
+  {
+    "Name": "mock-mcp: the wrong jsonrpc version is invalid_request (-32600)",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "1.0",
+      "id": 5,
+      "method": "tools/list"
+    }
+  },
+  {
+    "Name": "mock-mcp: an unknown method is method_not_found (-32601)",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": 6,
+      "method": "wat"
+    }
+  },
+  {
+    "Name": "mock-mcp: a missing method is invalid_request (-32600)",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": 7
+    }
+  },
+  {
+    "Name": "mock-mcp: the recorded log, header values gone",
+    "Method": "GET",
+    "Path": "/api/mock-mcp/requests",
+    "Volatile": [
+      {
+        "Pattern": "baseUrl",
+        "Why": "each backend serves its own mock MCP and advertises its own origin; Node's is :8787 and the engine's is :8801. Correct on both sides, and the entry disappears with the Node backend"
+      },
+      {
+        "Pattern": "*.at",
+        "Why": "each recording carries its own wall-clock instant"
+      }
+    ]
+  },
+  {
+    "Name": "mock-mcp: mode failList on",
+    "Method": "POST",
+    "Path": "/api/mock-mcp/mode",
+    "Body": {
+      "failList": true
+    }
+  },
+  {
+    "Name": "mock-mcp: tools/list fails on demand (-32603)",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": 8,
+      "method": "tools/list"
+    }
+  },
+  {
+    "Name": "mock-mcp: mode failCalls on, failList off",
+    "Method": "POST",
+    "Path": "/api/mock-mcp/mode",
+    "Body": {
+      "failCalls": true,
+      "failList": false
+    }
+  },
+  {
+    "Name": "mock-mcp: tools/call fails on demand (-32603)",
+    "Method": "POST",
+    "Path": "/mock-mcp",
+    "Body": {
+      "jsonrpc": "2.0",
+      "id": 9,
+      "method": "tools/call",
+      "params": {
+        "name": "lab_echo"
+      }
+    }
+  },
+  {
+    "Name": "mock-mcp: a non-boolean mode value is ignored, not accepted",
+    "Method": "POST",
+    "Path": "/api/mock-mcp/mode",
+    "Body": {
+      "failCalls": "yes please",
+      "hang": 1
+    }
+  },
+  {
+    "Name": "mock-mcp: mode all off",
+    "Method": "POST",
+    "Path": "/api/mock-mcp/mode",
+    "Body": {
+      "failCalls": false,
+      "failList": false,
+      "hang": false
+    }
+  },
+  {
+    "Name": "mock-mcp: reset after recording",
+    "Method": "POST",
+    "Path": "/api/mock-mcp/reset"
   }
 ]

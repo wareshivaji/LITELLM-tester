@@ -1,6 +1,6 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–7 complete** (2026-09-07). **Every endpoint is on the Python
+**Status:** **Phases 0–7 complete**; **8.1a done** (2026-09-08). **Every endpoint is on the Python
 engine except `/api/compare`**, which D-6 keeps in Node permanently. `lab diff` runs
 62 cases, all clean, plus **three** parity scripts — the SSE parser on a recorded byte
 fixture, all 16 scenario bodies, and `fields.ts` against LiteLLM in-process. 139
@@ -8,7 +8,7 @@ engine+reference tests, 306 collected across the compat suite. 0.2 withdrawn (D-
 every phase re-scoped after testing its premise, twice a documented deferral was
 caught by the gate at the moment it came due, and in Phase 7 two of three steps
 dissolved on inspection.
-**Next: Phase 8 — retire the Node backend, keeping only the JS-SDK probe.**
+**Next: Phase 8.1b — the thin JS-SDK probe, then delete the rest of `packages/server`.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -858,7 +858,86 @@ definition; the pytest file keeps only facts about LiteLLM alone.
 
 | Step | Action | Gate |
 |---|---|---|
-| 8.1 | Reduce `packages/server` to the JS-SDK probe only | UI green on Python for all 27 endpoints |
+| 8.1a | **Port the mock MCP server to Python** — the prerequisite the plan missed | `lab diff` clean on 18 new cases |
+| 8.1b | Reduce `packages/server` to the thin JS-SDK probe (D-7); Python `/api/compare` spawns it | UI green on Python for every endpoint |
+
+#### 8.1a — the route inventory was wrong, and it hid a blocker
+
+**DONE 2026-09-08.** "Every endpoint is migrated except `/api/compare`" was
+false, and the gate could not have caught it: `lab diff` compares the endpoints
+you give it, so an endpoint nobody listed is invisible to it. Counting
+registrations instead of trusting the count:
+
+| | Registrations |
+|---|---|
+| Node (`routes.ts` + `mockMcp.ts`) | **31** |
+| Python engine | 26 |
+| Genuinely absent | **5** — `/api/compare` (D-6, permanent) and **four mock-MCP routes** |
+
+The plan said 27 endpoints throughout. Two of my own earlier greps also
+undercounted, in both directions — one missed `@app.delete` and reported three
+Python routes as absent when they exist; the other matched a `{profile_id}`
+placeholder against `:id` and made the same mistake in reverse. **The count was
+never measured, only asserted**, which is the same failure as the 5,700-line
+deletion estimate one step above.
+
+`/mock-mcp`, `/api/mock-mcp/requests`, `/api/mock-mcp/mode` and
+`/api/mock-mcp/reset` were the last endpoints Node served alone. Retiring Node
+would not have failed them — it would have left every `declared`-mode MCP case
+pointing at a dead URL, which reads as "the gateway rejected it".
+
+**And the mock is live coverage, not a leftover.** Its recorded caveat says the
+AWS load balancer blocks a loopback URL in a request body, so a `declared` case
+against Prod measures the ALB. That made deletion look reasonable. But the
+default profile is `local` → `http://localhost:4000`, where nothing sits in
+between, so the mock is exactly the instrument it was built to be. Ported, not
+dropped.
+
+**The port found a real defect in already-ported code.**
+`summarise_credential_exposure` existed in Python since Phase 2.1 and answered
+a *different question* from the TypeScript function of the same name:
+
+| | Returns | Sees a key in a non-credential header? |
+|---|---|---|
+| TypeScript | `credentialHeaders`, `gatewayKeyLeaked`, `leakedVia` | **yes** — scans every header value for a `cg-(ak\|mk)-` shape |
+| Python (before) | `headers`, `kinds`, `count` | **no** — only classified values in headers already known to be credentials |
+
+That is the leak LiteLLM's troubleshooting guide warns about, and Python was
+blind to it. It diverged silently because **its only consumer had not been
+ported yet**: the function came over with the redaction tests, the mock that
+calls it stayed in Node, and a test written against the weaker shape passed
+happily for six days. A ported function with no live caller is untested no
+matter how many tests it has. Now on the TypeScript contract, parity-checked
+across 8 header sets including a key smuggled in a `cookie`.
+
+The `kinds` classification (api / management / other) is real information the
+TypeScript lacks. Dropped rather than added alongside, because the migration
+requires byte-identical payloads and a richer answer would make the gate
+meaningless. Worth revisiting once Node is gone.
+
+**Gate: 80 same, 0 differ** (62 → 80 cases). 156 engine tests, up from 139.
+
+Three things were deliberately *not* put behind the differ, each for a reason
+the differ cannot overcome:
+
+- **`hang` mode** never answers, by design — the caller's own timeout is what
+  is under test — so a differ case would hang the run. Verified live instead:
+  the request is recorded, no response arrives, the client times out.
+- **The bounded ring** needs 140 requests to reach. Asserted in the engine
+  tests, including that `seq` keeps counting past the cap — dropping the oldest
+  entry is fine, restarting the numbering would hide that anything was dropped.
+- **"No header value reaches the read endpoint"** is a property of one payload,
+  not a comparison of two. Both backends agreeing would not prove either is
+  safe. Asserted directly, for a gateway key *and* a third-party token — the
+  second being the value a correctly configured call SHOULD carry.
+
+**Two volatile entries added, and one flake correctly not silenced.** Each
+backend now serves its own mock and advertises its own origin, which is two
+processes telling the truth about themselves rather than a migration
+difference; both entries disappear with the Node backend. Separately, `mcp/browse`
+differed once on a transport timeout from Node to a remote gateway — re-run
+twice, clean both times, so it was left alone rather than declared volatile. **A
+volatile entry for a flake is how a real defect gets hidden.**
 | 8.2 | Delete what the JS-SDK probe does not need from `packages/client`. **Measured 2026-09-08, and the estimate below it was wrong** — see the note. | typecheck, tests, eslint clean |
 
 #### 8.2, measured rather than estimated
@@ -910,6 +989,11 @@ public name survives and the duplicate does not.
 
 **Do not start Phase 8 until Phases 3–6 have been green for a full working
 session.** Retiring the fallback is the irreversible step.
+
+**Satisfied 2026-09-08.** Phases 3–6 completed 09-07 and were re-verified green
+on 09-08 from a clean start of both backends: `lab diff` 62/0 (before 8.1a added
+18 cases), 139 engine tests, 26 TypeScript test files, three parity scripts,
+typecheck and eslint clean.
 
 ---
 
@@ -970,6 +1054,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-08 | **8.1a** | **Mock MCP server ported to Python — a Phase 8 blocker the plan never recorded.** Node registers **31** routes, not the 27 the plan claimed; the four `mock-mcp` routes were the last it served alone, and retiring it would have pointed every `declared`-mode MCP case at a dead URL. The port found a real defect in code ported six days earlier: `summarise_credential_exposure` answered a different question from its TypeScript namesake and could not see a gateway key in a non-credential header — the exact leak the mock exists to detect. It diverged silently because its only consumer had not been ported yet. Now on the TS contract, parity-checked over 8 header sets. **`lab diff` 80 same, 0 differ** (was 62 cases); 156 engine tests (was 139). `hang` mode, the bounded ring and the no-leak property are asserted rather than diffed, each for a reason the differ cannot overcome. | `tokenshield-compat-tests/engine/{mock_mcp,mcp,redact,config,app}.py`, `engine/tests/test_mock_mcp.py`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | 8 (pre) | **Measured `packages/client` before deleting from it, and the plan's own 8.2 estimate was wrong** — 5,700 lines claimed, **1,087** actually dead post-8.1 and **2,814** with types extracted. The gap is the web's runtime closure (3,495 lines), which the estimate never counted. Nothing is deletable *today*: `adapters` still imports `Transport`, and `client.ts` is still used by `preflight` and the Node `routes.ts`. Prerequisite landed: **`sdkModesFor` moved `adapters.ts` -> `surfaces.ts`**, severing the web's static edge to the vendor SDKs (the bundle was already clean — this frees a *deletion*, not bytes), and `SdkMode` collapsed to an alias of `ExchangeMode`. | `packages/client/src/{adapters,surfaces,index}.ts`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **7** | **Phase 7 complete, with two of three steps dissolved on inspection.** 7.1's premise was false — the scripts are unique coverage, not engine duplicates — so the full request-layer collapse is declined; its security-critical part is done: **`--no-redact` removed**, the flag that produced BC-1's worst artefacts. 7.2 dropped. 7.3 done better than planned: LiteLLM in-process via `get_supported_openai_params`, no proxy or credential needed. That found **7 missing OpenAI chat fields** in `fields.ts` (incl. `max_completion_tokens`) and, once added, **a false `FIELD_GAPS` claim** that `store` had no chat equivalent. Also pinned a LiteLLM trap: `request_type` silently ignores `"responses"`. 139 tests + 306 collected. | `tokenshield-compat-tests/*`, `packages/client/src/fields.ts`, `scripts/litellm-fields-parity.mjs`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **6** | **Phase 6 complete.** The session registry and the management endpoints — targets, mint, export, probe-models. `lab diff` **62 same, 0 differ**. **Every endpoint is now migrated except `/api/compare`** (D-6). The registry's no-shadowing rule is the same failure D-2 removed from the pytest side. Wiring it in changed `/api/config`, `/api/health` and `_resolve_target`, which the existing gate cases covered for free. The gate caught both add routes wrapping their payload where Node returns it flat. Export verified by comparing real files, since its filename embeds the run instant. 133 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
