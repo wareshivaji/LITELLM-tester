@@ -1,12 +1,14 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–6 complete** (2026-09-07). **Every endpoint is on the Python
+**Status:** **Phases 0–7 complete** (2026-09-07). **Every endpoint is on the Python
 engine except `/api/compare`**, which D-6 keeps in Node permanently. `lab diff` runs
-62 cases, all clean, plus two parity scripts — the SSE parser on a recorded byte
-fixture and all 16 scenario bodies. 133 engine tests. 0.2 withdrawn (D-9); every
-phase re-scoped after testing its premise, and twice a documented deferral was caught
-by the gate at the moment it came due.
-**Next: Phase 7 — absorb the compat suite, and LiteLLM in-process.**
+62 cases, all clean, plus **three** parity scripts — the SSE parser on a recorded byte
+fixture, all 16 scenario bodies, and `fields.ts` against LiteLLM in-process. 139
+engine+reference tests, 306 collected across the compat suite. 0.2 withdrawn (D-9);
+every phase re-scoped after testing its premise, twice a documented deferral was
+caught by the gate at the moment it came due, and in Phase 7 two of three steps
+dissolved on inspection.
+**Next: Phase 8 — retire the Node backend, keeping only the JS-SDK probe.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -777,13 +779,79 @@ identical and is flagged in the module docstring for a paired change.
 
 133 tests.
 
-### Phase 7 — Absorb the compat suite
+### Phase 7 — Absorb the compat suite  ·  **DONE 2026-09-07**
 
-| Step | Action | Gate |
-|---|---|---|
-| 7.1 | The ~9 standalone scripts become engine calls + pytest parametrization | same verdicts as the last recorded `.txt` run |
-| 7.2 | `build_*.py` read engine output instead of scraped `.txt` | xlsx byte-comparable on the same input |
-| 7.3 | LiteLLM in-process; retire the `:4001` proxy and `reference/litellm/config.yaml` | reference cases reproduce `docs/REFERENCE_COMPARISON.md` |
+**Two of the three steps dissolved when their premises were tested.** That is
+the fourth phase in a row where checking first changed the work, and the second
+where it removed most of it.
+
+| Step | Outcome |
+|---|---|
+| 7.1 | **Premise false.** The scripts do not duplicate the engine — they cover `/v1/embeddings`, `/v1/files`, smart routing and the management-key matrices, none of which the engine ever modelled. They are the *unique* Python coverage. What IS duplicated is the request layer, and its security-critical part is done: see below. The full collapse is **declined**, not deferred. |
+| 7.2 | **Dropped.** Its premise was the scripts emitting engine output. They keep their own `rec()` recording, so the builders have nothing to change. |
+| 7.3 | **Done, and better than planned.** |
+
+#### 7.1 — the part that mattered: `--no-redact` is gone
+
+`_util.py` and `_toolgov.py` are two hand-rolled HTTP paths and **neither
+redacts nor classifies**. Collapsing them onto `engine.transport` touches 10
+modules and 167 collected tests for **no new capability** — the Go mistake's
+shape — so it is declined and recorded rather than half-started.
+
+But one piece of it is security-critical and small. **`--no-redact` was the
+mechanism that produced the worst of BC-1**: five result files carrying live
+keys, one of whose own headers reads `secrets      : RAW (do not commit)`. It
+went uncommitted only because the repo had no git until that morning. A switch
+whose sole effect is writing live credentials to disk has no defensible use.
+
+Removed. Redaction is unconditional in both `management_keys_test.py` and
+`management_keys_realworld.py`, verified by driving `ExchangeLog` with a fake key
+and checking the header line, the request headers and the response body all come
+out masked. The minted key is still printed to the console, where a human needs
+it and where it does not persist.
+
+#### 7.3 — LiteLLM in-process, and two errors in our own tables
+
+`litellm` imports in-process and exposes `get_supported_openai_params`, so the
+field-support question needs **no proxy, no credential and no network** — and
+the answer comes from LiteLLM's own *declaration* rather than its runtime
+behaviour under whatever configuration happened to be running. The `:4001`
+proxy stays for the error-envelope comparison, which needs a live gateway on
+both sides.
+
+New `scripts/litellm-fields-parity.mjs`, under `npm run parity` beside the SSE
+and scenario-body checks. **`fields.ts` was transcribed by hand, and a hand
+transcription rots silently; this makes it rot loudly.** The first run found two
+real errors:
+
+1. **Seven OpenAI chat fields were missing** — `audio`,
+   `max_completion_tokens`, `modalities`, `prediction`,
+   `prompt_cache_retention`, `store`, `web_search_options`.
+   `max_completion_tokens` is the one that matters: it is OpenAI's replacement
+   for `max_tokens`, so a client on a current SDK sends it as a matter of
+   course, and a reference table that does not know the field cannot say whether
+   the gateway honours it.
+2. **Adding them falsified a `FIELD_GAPS` entry**, which is how the second error
+   surfaced. That entry claimed `store` had *"no chat equivalent"* and was *"a
+   real data-residency question"* — and it was simply wrong. The claim survived
+   because the chat table lacked the field, so nothing contradicted it. **A gap
+   entry that invents a difference is worse than a missing one**: this one framed
+   a non-existent divergence as a decision someone could have acted on. Removed,
+   and `fields.test.mjs` corrected — it had encoded the same false claim.
+
+**A trap pinned rather than a feature tested.** `request_type` accepts exactly
+`chat_completion`, `embeddings`, `transcription`. `"responses"` is not among
+them and LiteLLM **does not reject it** — it silently returns the
+chat_completion answer, as does any nonsense value. An earlier version of the
+reference file asked it about Responses, got a confident identical wrong list,
+and asserted against it. There is now a test pinning that so nobody spends the
+same afternoon twice.
+
+**One structural mistake, made and corrected within the hour.** The reference
+file first held its own copy of the 27-field chat table, and it was stale as
+soon as the seven fields landed — which is precisely the rot the check exists to
+catch. The cross-check moved to the repo where the table has its single
+definition; the pytest file keeps only facts about LiteLLM alone.
 
 ### Phase 8 — Retire the Node backend
 
@@ -855,6 +923,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **7** | **Phase 7 complete, with two of three steps dissolved on inspection.** 7.1's premise was false — the scripts are unique coverage, not engine duplicates — so the full request-layer collapse is declined; its security-critical part is done: **`--no-redact` removed**, the flag that produced BC-1's worst artefacts. 7.2 dropped. 7.3 done better than planned: LiteLLM in-process via `get_supported_openai_params`, no proxy or credential needed. That found **7 missing OpenAI chat fields** in `fields.ts` (incl. `max_completion_tokens`) and, once added, **a false `FIELD_GAPS` claim** that `store` had no chat equivalent. Also pinned a LiteLLM trap: `request_type` silently ignores `"responses"`. 139 tests + 306 collected. | `tokenshield-compat-tests/*`, `packages/client/src/fields.ts`, `scripts/litellm-fields-parity.mjs`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **6** | **Phase 6 complete.** The session registry and the management endpoints — targets, mint, export, probe-models. `lab diff` **62 same, 0 differ**. **Every endpoint is now migrated except `/api/compare`** (D-6). The registry's no-shadowing rule is the same failure D-2 removed from the pytest side. Wiring it in changed `/api/config`, `/api/health` and `_resolve_target`, which the existing gate cases covered for free. The gate caught both add routes wrapping their payload where Node returns it flat. Export verified by comparing real files, since its filename embeds the run instant. 133 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **5b** | **Phase 5b complete; Phase 5 done.** Both runners, plus the case bodies and expectations Phase 1 deferred. `lab diff` **37 same, 0 differ**; 22 prompt bodies gated free via the dry-run, 16 scenario bodies via a new parity script. Live: the free `mcp` suite matched exactly, the prompt runner matched on two cheap cases (~1.5¢). Bodies generated with sentinel substitution rather than transcribed, and the parity script guards that assumption. **20 of 27 endpoints**, 113 tests. | `tokenshield-compat-tests/engine/*`, `scripts/scenario-body-parity.mjs`, `testdata/scenario-bodies.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **5a** | **Phase 5a complete.** SSE parsing, `Transport.stream`, the relay, `/api/stream`, `/api/governance/burst`. `lab diff` **30 same, 0 differ**; the parser byte-identical to the TypeScript on a recorded fixture via `npm run sse:parity`. The premise check dropped `stream.ts` (browser-side analysis, not the server's) and corrected "four streaming endpoints" to three. The gate caught `label` — a Phase 3 deferral coming due. Live relay verified structurally; a 5-vs-4 frame count was the provider, not the reader. **18 of 27 endpoints**, 95 tests. | `tokenshield-compat-tests/engine/*`, `scripts/sse-parity.mjs`, `testdata/sse/*`, `docs/CONVERGENCE.md` |
