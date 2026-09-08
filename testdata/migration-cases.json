@@ -4,15 +4,196 @@
     "Method": "GET",
     "Path": "/api/health",
     "Volatile": [
-      { "Pattern": "uptimeSeconds", "Why": "seconds since each backend started; they were started minutes apart" }
+      {
+        "Pattern": "uptimeSeconds",
+        "Why": "seconds since each backend started; they were started minutes apart"
+      }
     ]
   },
-  { "Name": "config",           "Method": "GET", "Path": "/api/config" },
-  { "Name": "scenario suites",  "Method": "GET", "Path": "/api/scenarios/suites" },
-  { "Name": "prompt cases",     "Method": "GET", "Path": "/api/prompts/cases" },
-  { "Name": "runs (default)",   "Method": "GET", "Path": "/api/runs" },
-  { "Name": "runs (limit=5)",   "Method": "GET", "Path": "/api/runs?limit=5" },
-  { "Name": "runs (limit=9999 clamps)", "Method": "GET", "Path": "/api/runs?limit=9999" },
-  { "Name": "runs (limit=junk falls back)", "Method": "GET", "Path": "/api/runs?limit=abc" },
-  { "Name": "runs/:id unknown -> 404", "Method": "GET", "Path": "/api/runs/no-such-exchange" }
+  {
+    "Name": "config",
+    "Method": "GET",
+    "Path": "/api/config"
+  },
+  {
+    "Name": "scenario suites",
+    "Method": "GET",
+    "Path": "/api/scenarios/suites"
+  },
+  {
+    "Name": "prompt cases",
+    "Method": "GET",
+    "Path": "/api/prompts/cases"
+  },
+  {
+    "Name": "runs (default)",
+    "Method": "GET",
+    "Path": "/api/runs",
+    "Volatile": [
+      {
+        "Pattern": "exchanges.*.id",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchanges.*.startedAt",
+        "Why": "wall-clock instant of each call"
+      },
+      {
+        "Pattern": "exchanges.*.totalMs",
+        "Why": "network timing"
+      }
+    ]
+  },
+  {
+    "Name": "runs (limit=5)",
+    "Method": "GET",
+    "Path": "/api/runs?limit=5",
+    "Volatile": [
+      {
+        "Pattern": "exchanges.*.id",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchanges.*.startedAt",
+        "Why": "wall-clock instant of each call"
+      },
+      {
+        "Pattern": "exchanges.*.totalMs",
+        "Why": "network timing"
+      }
+    ]
+  },
+  {
+    "Name": "runs (limit=9999 clamps)",
+    "Method": "GET",
+    "Path": "/api/runs?limit=9999",
+    "Volatile": [
+      {
+        "Pattern": "exchanges.*.id",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchanges.*.startedAt",
+        "Why": "wall-clock instant of each call"
+      },
+      {
+        "Pattern": "exchanges.*.totalMs",
+        "Why": "network timing"
+      }
+    ]
+  },
+  {
+    "Name": "runs (limit=junk falls back)",
+    "Method": "GET",
+    "Path": "/api/runs?limit=abc",
+    "Volatile": [
+      {
+        "Pattern": "exchanges.*.id",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchanges.*.startedAt",
+        "Why": "wall-clock instant of each call"
+      },
+      {
+        "Pattern": "exchanges.*.totalMs",
+        "Why": "network timing"
+      }
+    ]
+  },
+  {
+    "Name": "runs/:id unknown -> 404",
+    "Method": "GET",
+    "Path": "/api/runs/no-such-exchange"
+  },
+  {
+    "Name": "exchange: unknown surface -> 400",
+    "Method": "POST",
+    "Path": "/api/exchange",
+    "Body": {
+      "surfaceId": "no.such.surface",
+      "profileId": "prod-us"
+    }
+  },
+  {
+    "Name": "exchange: misnamed target field is rejected, not ignored",
+    "Method": "POST",
+    "Path": "/api/exchange",
+    "Body": {
+      "surfaceId": "mcp.servers",
+      "profile": "prod-us",
+      "key": "PROD_TOOL_BLOCKING"
+    }
+  },
+  {
+    "Name": "exchange: unknown profile -> 400",
+    "Method": "POST",
+    "Path": "/api/exchange",
+    "Body": {
+      "surfaceId": "mcp.servers",
+      "profileId": "no-such-profile"
+    }
+  },
+  {
+    "Name": "exchange: unknown key alias -> 400",
+    "Method": "POST",
+    "Path": "/api/exchange",
+    "Body": {
+      "surfaceId": "mcp.servers",
+      "profileId": "prod-us",
+      "keyAlias": "NOT_A_KEY"
+    }
+  },
+  {
+    "Name": "exchange: real free call (GET /v1/mcp/servers)",
+    "Method": "POST",
+    "Path": "/api/exchange",
+    "Body": {
+      "surfaceId": "mcp.servers",
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer"
+    },
+    "Volatile": [
+      {
+        "Pattern": "timings.startedAt",
+        "Why": "wall-clock instant of each call"
+      },
+      {
+        "Pattern": "timings.ttfbMs",
+        "Why": "network timing"
+      },
+      {
+        "Pattern": "gateway.requestId",
+        "Why": "the gateway mints one per request"
+      },
+      {
+        "Pattern": "response.headers.date",
+        "Why": "response timestamp"
+      },
+      {
+        "Pattern": "response.headers.x-request-id",
+        "Why": "same id, in the header"
+      }
+    ]
+  },
+  {
+    "Name": "runs AFTER the exchanges — the summary row shape",
+    "Method": "GET",
+    "Path": "/api/runs",
+    "Volatile": [
+      {
+        "Pattern": "exchanges.*.id",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchanges.*.startedAt",
+        "Why": "wall-clock instant of each call"
+      },
+      {
+        "Pattern": "exchanges.*.totalMs",
+        "Why": "network timing"
+      }
+    ]
+  }
 ]
