@@ -1,12 +1,12 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–4 and 5a complete** (2026-09-07). **18 of 27 endpoints** on the
-Python engine, each gated by `lab diff` (30 cases, all clean), plus an SSE parser
-byte-identical to the TypeScript on a recorded fixture. `/api/compare` stays in Node
-permanently (D-6). 0.2 withdrawn (D-9); every phase re-scoped after testing its
-premise, and twice now a documented deferral has been caught by the gate at the
+**Status:** **Phases 0–5 complete** (2026-09-07). **20 of 27 endpoints** on the Python
+engine, each gated by `lab diff` (37 cases, all clean), plus two parity scripts —
+the SSE parser on a recorded byte fixture and all 16 scenario bodies. `/api/compare`
+stays in Node permanently (D-6). 0.2 withdrawn (D-9); every phase re-scoped after
+testing its premise, and twice a documented deferral was caught by the gate at the
 moment it came due.
-**Next: Phase 5b — the two runners, and the case bodies they need.**
+**Next: Phase 6 — the stateful and management endpoints.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -678,13 +678,49 @@ non-streamable surface *by label* — "MCP servers does not support streaming" �
 and the engine was naming it by id. That is twice now that a documented
 deferral has been caught by the gate at exactly the right moment.
 
-#### 5b — the two runners  ·  not started
+#### 5b — the two runners  ·  **DONE 2026-09-07**
 
-`/api/prompts/run` and `/api/scenarios/run`, which need the case **bodies** and
+`/api/prompts/run` and `/api/scenarios/run`, plus the case **bodies** and
 **expectations** — the 1,338 lines Phase 1 correctly declined to turn into a
-neutral format, now due as Python literals. Both spend.
-**Gate:** `lab diff` on the dry-run path, which is free; the runs themselves
-cost and are priced before being sent.
+neutral format. Phase 1 was right that no *neutral* format was needed; this is
+where they arrive as Python, in the phase that actually reads them.
+
+**Gate met:** `lab diff` **37 same, 0 differ**, and both parity scripts clean.
+
+**Gating two runners without spending, two different ways:**
+
+| | how |
+|---|---|
+| `/api/prompts/run` | has a `dryRun` mode that builds every body and returns it *without sending*. All **22 bodies gated through `lab diff` for free**, and byte-identical. |
+| `/api/scenarios/run` | has no dry run, so `scripts/scenario-body-parity.mjs` is the free deterministic equivalent: build all **16 on both sides** with the same context and compare. |
+
+Both sets of bodies are **generated**, not transcribed — the same reasoning as
+`cases.py` in Phase 3. The scenario bodies are `(ctx) => ({...})` closures, so
+they were invoked with sentinel context values and dumped; `resolve_body`
+substitutes the real model by *walking the structure* rather than string-
+replacing serialised JSON, so a sentinel inside an unrelated value cannot be hit
+by accident. Verified safe before generating: `ctx.model` appears five times,
+`ctx.embedModel` never, and neither is ever interpolated inside a longer string.
+The parity script guards that assumption too — a future scenario that *does*
+interpolate would fail there rather than months later at runtime.
+
+**Verified live.** The `mcp` suite is 0-of-4 spending, so the scenario runner
+was checked **for free** and matched exactly: same events, four identical
+results, same tally (3 pass, 1 not-implemented), same targets. `mcp-session-id`
+correctly reports `not-implemented` rather than a failure, so the inversion
+works. The prompt runner was checked on the two cheapest cases — 4 calls per
+backend, about 1.5¢ — and matched on estimate, outcomes, comparisons and
+answers.
+
+**113 tests.** The new ones cover the judgement calls rather than the happy
+paths, because each is a place where a plausible implementation gives a wrong
+answer that reads like a real result: a refusal case must be checked on status
+*alone* or one defect reports several times over; a `withholdsTool` expectation
+must not pass when no listing was emitted, or "blocked" gets reported for any
+response that never listed anything; a 401 must make a landmine `inconclusive`
+rather than `landmine-changed`, since the latter reads as "the bug may be fixed
+here" when nothing was measured; and `bodyPath: true` means *present*, not
+*equal to true*, so a field whose value is `false` still counts.
 
 ### Phase 6 — Stateful and management
 
@@ -770,6 +806,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **5b** | **Phase 5b complete; Phase 5 done.** Both runners, plus the case bodies and expectations Phase 1 deferred. `lab diff` **37 same, 0 differ**; 22 prompt bodies gated free via the dry-run, 16 scenario bodies via a new parity script. Live: the free `mcp` suite matched exactly, the prompt runner matched on two cheap cases (~1.5¢). Bodies generated with sentinel substitution rather than transcribed, and the parity script guards that assumption. **20 of 27 endpoints**, 113 tests. | `tokenshield-compat-tests/engine/*`, `scripts/scenario-body-parity.mjs`, `testdata/scenario-bodies.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **5a** | **Phase 5a complete.** SSE parsing, `Transport.stream`, the relay, `/api/stream`, `/api/governance/burst`. `lab diff` **30 same, 0 differ**; the parser byte-identical to the TypeScript on a recorded fixture via `npm run sse:parity`. The premise check dropped `stream.ts` (browser-side analysis, not the server's) and corrected "four streaming endpoints" to three. The gate caught `label` — a Phase 3 deferral coming due. Live relay verified structurally; a 5-vs-4 frame count was the provider, not the reader. **18 of 27 endpoints**, 95 tests. | `tokenshield-compat-tests/engine/*`, `scripts/sse-parity.mjs`, `testdata/sse/*`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **4b** | **Phase 4b complete.** Seven endpoints — models, preflight, mcp/browse, mcp/test, mcp/call, mcp/aggregate, tools/loop. `lab diff` **25 same, 0 differ**. `/api/compare` excluded by D-6, not deferred: it drives the real vendor npm SDKs. `tools/loop` gated on validation paths and compared structurally on a live round-trip, since a strict diff of model output would be theatre. Ported the two corrections the TypeScript carries as comments — `summarise_turn` must be told its surface, and `check_tool_calls` must NOT flag a missing `index`. **16 of 27 endpoints.** | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **4a** | **Phase 4a complete.** `transport`, `Exchange`, deep `redact`, `classify`, `signal`, `surfaces`, and `/api/exchange`. `lab diff` **15 same, 0 differ** including a real free gateway call. Phase 4 split first — ~1,900 lines of foundation would have meant rushing what everything depends on. Three bugs caught: a case-sensitivity bug in the exposure summary, an invented `mode` value, and a `summarize()` stub returning whole records. The third also exposed a gate gap — the run-list cases ran before the exchanges and so compared empty stores; a post-exchange case now covers it. 78 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |

@@ -49,9 +49,13 @@ export default tseslint.config(
   {
     // Dev scripts are plain Node ESM, run directly with `node` — same shape as
     // the test files below, so the same globals apply.
+    //
+    // `URL` is here because the parity scripts resolve their fixtures relative
+    // to their own module rather than to the working directory: `npm run parity`
+    // and a bare `node scripts/...` must find the same file.
     files: ['scripts/**/*.mjs'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly' },
+      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
     },
   },
   {

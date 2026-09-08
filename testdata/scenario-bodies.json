@@ -1,0 +1,399 @@
+[
+  {
+    "id": "conformance",
+    "scenarios": [
+      {
+        "id": "auth-401",
+        "surface": "chat.completions",
+        "spends": false,
+        "expect": {
+          "status": 401,
+          "verdict": "auth",
+          "envelope": "openai"
+        },
+        "body": {
+          "model": "__MODEL__",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with exactly: pong"
+            }
+          ],
+          "max_tokens": 16
+        },
+        "unauthenticated": true
+      },
+      {
+        "id": "unknown-model",
+        "surface": "chat.completions",
+        "spends": false,
+        "expect": {
+          "status": [
+            400,
+            404
+          ],
+          "verdict": "not-found",
+          "contains": "no-such-model"
+        },
+        "body": {
+          "model": "no-such-model-in-any-catalogue",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with exactly: pong"
+            }
+          ],
+          "max_tokens": 16
+        }
+      },
+      {
+        "id": "empty-messages",
+        "surface": "chat.completions",
+        "spends": false,
+        "expect": {
+          "status": 400,
+          "verdict": "bad-request"
+        },
+        "body": {
+          "model": "__MODEL__",
+          "messages": [],
+          "max_tokens": 16
+        }
+      },
+      {
+        "id": "stop-as-string",
+        "surface": "chat.completions",
+        "spends": false,
+        "expect": {
+          "status": 400,
+          "verdict": "bad-request"
+        },
+        "body": {
+          "model": "__MODEL__",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with exactly: pong"
+            }
+          ],
+          "max_tokens": 16,
+          "stop": "\n\n"
+        },
+        "landmine": "LM-3"
+      },
+      {
+        "id": "content-as-array",
+        "surface": "chat.completions",
+        "spends": true,
+        "expect": {
+          "status": 200,
+          "verdict": "ok"
+        },
+        "body": {
+          "model": "__MODEL__",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reply with exactly: pong"
+                }
+              ]
+            }
+          ],
+          "max_tokens": 16
+        }
+      },
+      {
+        "id": "unknown-param-ignored",
+        "surface": "chat.completions",
+        "spends": true,
+        "expect": {
+          "status": 200,
+          "verdict": "ok"
+        },
+        "body": {
+          "model": "__MODEL__",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with exactly: pong"
+            }
+          ],
+          "max_tokens": 16,
+          "cg_lab_not_a_real_param": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "surfaces",
+    "scenarios": [
+      {
+        "id": "chat-basic",
+        "surface": "chat.completions",
+        "spends": true,
+        "expect": {
+          "status": 200,
+          "verdict": "ok",
+          "headers": [
+            "x-request-id"
+          ],
+          "bodyPath": {
+            "choices.0.message.content": true,
+            "usage.total_tokens": true
+          }
+        },
+        "body": {
+          "model": "__MODEL__",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with exactly: pong"
+            }
+          ],
+          "max_tokens": 16
+        }
+      },
+      {
+        "id": "responses-basic",
+        "surface": "responses",
+        "spends": true,
+        "expect": {
+          "status": 200,
+          "verdict": "ok",
+          "bodyPath": {
+            "output.0": true
+          }
+        },
+        "body": {
+          "model": "__MODEL__",
+          "input": "Reply with exactly: pong",
+          "max_output_tokens": 32
+        }
+      },
+      {
+        "id": "responses-shorthand-continuation",
+        "surface": "responses",
+        "spends": true,
+        "expect": {
+          "status": 200,
+          "verdict": "ok",
+          "contains": "21"
+        },
+        "body": {
+          "model": "__MODEL__",
+          "max_output_tokens": 64,
+          "input": [
+            {
+              "role": "user",
+              "content": "What is the weather in Paris?"
+            },
+            {
+              "type": "function_call",
+              "call_id": "call_scenario_1",
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Paris\"}"
+            },
+            {
+              "type": "function_call_output",
+              "call_id": "call_scenario_1",
+              "output": "{\"temperature_c\":21}"
+            }
+          ],
+          "tools": [
+            {
+              "type": "function",
+              "name": "get_weather",
+              "description": "Get the current temperature for a city.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          ]
+        },
+        "notImplemented": "The gateway now ACCEPTS this request (200) but still drops the shorthand user turn, so the model answers without ever seeing the question. Re-measured 2026-09-06: the paired explicit scenario answers \"The current temperature in Paris is 21C\"; this one answers \"I'm ready to help! It looks like I have access to several useful tools\" — same request, same model, no question in view. Workaround remains the explicit message item.",
+        "reference": "openai"
+      },
+      {
+        "id": "responses-explicit-continuation",
+        "surface": "responses",
+        "spends": true,
+        "expect": {
+          "status": 200,
+          "verdict": "ok",
+          "contains": "21"
+        },
+        "body": {
+          "model": "__MODEL__",
+          "max_output_tokens": 64,
+          "input": [
+            {
+              "type": "message",
+              "role": "user",
+              "content": [
+                {
+                  "type": "input_text",
+                  "text": "What is the weather in Paris?"
+                }
+              ]
+            },
+            {
+              "type": "function_call",
+              "call_id": "call_scenario_2",
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Paris\"}"
+            },
+            {
+              "type": "function_call_output",
+              "call_id": "call_scenario_2",
+              "output": "{\"temperature_c\":21}"
+            }
+          ],
+          "tools": [
+            {
+              "type": "function",
+              "name": "get_weather",
+              "description": "Get the current temperature for a city.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          ]
+        },
+        "reference": "openai"
+      }
+    ]
+  },
+  {
+    "id": "mcp",
+    "scenarios": [
+      {
+        "id": "mcp-tools-list-shape",
+        "surface": "mcp.aggregate",
+        "spends": false,
+        "expect": {
+          "status": 200,
+          "bodyPath": {
+            "result.tools": true
+          }
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "tools/list",
+          "params": {}
+        },
+        "reference": "mcp-spec"
+      },
+      {
+        "id": "mcp-session-id",
+        "surface": "mcp.aggregate",
+        "spends": false,
+        "expect": {
+          "status": 200,
+          "headers": [
+            "mcp-session-id"
+          ]
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "tools/list",
+          "params": {}
+        },
+        "notImplemented": "No Mcp-Session-Id was returned. Session continuity across MCP calls is not available to a client yet.",
+        "reference": "mcp-spec"
+      },
+      {
+        "id": "mcp-servers-listing",
+        "surface": "mcp.servers",
+        "spends": false,
+        "expect": {
+          "status": 200,
+          "bodyPath": {
+            "servers": true
+          }
+        },
+        "body": {},
+        "reference": "measured"
+      },
+      {
+        "id": "mcp-unknown-method",
+        "surface": "mcp.aggregate",
+        "spends": false,
+        "expect": {
+          "status": 200,
+          "bodyPath": {
+            "error.code": true
+          }
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 99,
+          "method": "tools/doesNotExist",
+          "params": {}
+        },
+        "reference": "mcp-spec"
+      }
+    ]
+  },
+  {
+    "id": "governance",
+    "scenarios": [
+      {
+        "id": "model-denied",
+        "surface": "tokens.count",
+        "spends": false,
+        "expect": {
+          "status": 403,
+          "verdict": "model-denied",
+          "contains": "not allowed"
+        },
+        "body": {
+          "model": "gpt-4o",
+          "messages": [
+            {
+              "role": "user",
+              "content": "x"
+            }
+          ]
+        }
+      },
+      {
+        "id": "gate-applies-off-chat",
+        "surface": "tokens.count",
+        "spends": false,
+        "expect": {
+          "verdict": "model-denied"
+        },
+        "body": {
+          "model": "claude-sonnet-4",
+          "messages": [
+            {
+              "role": "user",
+              "content": "x"
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

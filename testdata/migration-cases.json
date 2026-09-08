@@ -449,5 +449,91 @@
         "Why": "same"
       }
     ]
+  },
+  {
+    "Name": "prompts/run: DRY RUN — all 22 bodies, free",
+    "Method": "POST",
+    "Path": "/api/prompts/run",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "dryRun": true,
+      "model": "bedrock-claude-haiku-4.5"
+    }
+  },
+  {
+    "Name": "prompts/run: no key -> 400",
+    "Method": "POST",
+    "Path": "/api/prompts/run",
+    "Body": {
+      "profileId": "prod-us",
+      "dryRun": true
+    }
+  },
+  {
+    "Name": "prompts/run: unknown case id -> 400",
+    "Method": "POST",
+    "Path": "/api/prompts/run",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "dryRun": true,
+      "caseIds": [
+        "nope"
+      ]
+    }
+  },
+  {
+    "Name": "prompts/run: no valid surface -> 400",
+    "Method": "POST",
+    "Path": "/api/prompts/run",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "dryRun": true,
+      "surfaces": [
+        "nope"
+      ]
+    }
+  },
+  {
+    "Name": "scenarios/run: unknown suite -> 400",
+    "Method": "POST",
+    "Path": "/api/scenarios/run",
+    "Body": {
+      "suiteId": "nope",
+      "targets": [
+        {
+          "profileId": "prod-us",
+          "keyAlias": "PROD_TOOL_BLOCKING",
+          "scheme": "bearer"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "scenarios/run: no targets -> 400",
+    "Method": "POST",
+    "Path": "/api/scenarios/run",
+    "Body": {
+      "suiteId": "conformance",
+      "targets": []
+    }
+  },
+  {
+    "Name": "scenarios/run: target with no credential -> 400",
+    "Method": "POST",
+    "Path": "/api/scenarios/run",
+    "Body": {
+      "suiteId": "conformance",
+      "targets": [
+        {
+          "profileId": "prod-us"
+        }
+      ]
+    }
   }
 ]
