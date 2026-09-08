@@ -270,3 +270,42 @@ export function readUsage(body: unknown): UsageSummary | undefined {
   if (total !== undefined) summary.total = total;
   return summary;
 }
+
+
+import type { ExchangeMode } from './types.js';
+
+/**
+ * Which client can be pointed at a given surface.
+ *
+ * Moved here from `adapters.ts` on 2026-09-08. It is a per-surface lookup and
+ * this is where the per-surface facts live — but the reason for the move is
+ * structural rather than tidiness. The web imports this function; importing it
+ * from `adapters.ts` bound the browser build, in the static import graph, to the
+ * module that loads the real `openai` and `@anthropic-ai/sdk` packages, and
+ * through it to transport, classify, redact, signal and sse. The bundler
+ * tree-shakes all of that away, so nothing shipped that should not have — but a
+ * static edge is still what makes a module un-deletable, and 876 lines could not
+ * be removed while this edge existed.
+ */
+/** Surfaces each vendor SDK can actually reach, by our surface id. */
+export const OPENAI_SDK_SURFACES = ['chat.completions', 'responses'] as const;
+
+
+/**
+ * Surfaces the Anthropic SDK can be pointed at.
+ *
+ * Empty since 2026-09-02: `/v1/messages` left the tested scope, so there is
+ * nowhere for this adapter to run. The adapter itself is kept — it is the only
+ * thing that can show what `@anthropic-ai/sdk` extracts from an error, and the
+ * finding it produced (a 401 on /v1/messages answered in the OPENAI envelope,
+ * so the SDK reads no type and no code) is recorded in the ledger. Restoring
+ * the surface is the only thing needed to run it again.
+ */
+export const ANTHROPIC_SDK_SURFACES: readonly string[] = [];
+
+export function sdkModesFor(surfaceId: string): ExchangeMode[] {
+  const modes: ExchangeMode[] = ['raw'];
+  if ((OPENAI_SDK_SURFACES as readonly string[]).includes(surfaceId)) modes.push('openai-sdk');
+  if ((ANTHROPIC_SDK_SURFACES as readonly string[]).includes(surfaceId)) modes.push('anthropic-sdk');
+  return modes;
+}

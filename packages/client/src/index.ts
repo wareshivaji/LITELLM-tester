@@ -46,6 +46,11 @@ export {
   SURFACES,
   surfaceById,
   withStreaming,
+  // Moved here from adapters.ts on 2026-09-08 so the web can import it without
+  // binding the browser build to the vendor SDKs. See the note in surfaces.ts.
+  ANTHROPIC_SDK_SURFACES,
+  OPENAI_SDK_SURFACES,
+  sdkModesFor,
 } from './surfaces.js';
 export type { SurfaceFamily, SurfaceOutput, SurfaceSpec, UsageSummary } from './surfaces.js';
 export { FLAT_ENVELOPE_SURFACE, PROBES, probesFor } from './probes.js';
@@ -57,10 +62,7 @@ export type { LifecycleReport } from './stream.js';
 export type { StreamAnalysis, StreamAnomaly } from './stream.js';
 export type { StreamRequest } from './transport.js';
 export {
-  ANTHROPIC_SDK_SURFACES,
-  OPENAI_SDK_SURFACES,
   runWithSdk,
-  sdkModesFor,
 } from './adapters.js';
 export type { AdapterInit, SdkFailure, SdkMode, SdkOutcome } from './adapters.js';
 export {

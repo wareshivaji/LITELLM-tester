@@ -29,9 +29,21 @@ import OpenAI from 'openai';
 
 import { Transport } from './transport.js';
 import type { Exchange, ExchangeMode, Profile } from './types.js';
+// `sdkModesFor` used to live here. It moved to surfaces.ts on 2026-09-08:
+// the web imports it, and importing it from THIS module bound the browser
+// build to the vendor SDKs in the static graph — which is what prevented
+// transport.ts from ever being deletable.
 
 /** Which client made the call. */
-export type SdkMode = 'raw' | 'openai-sdk' | 'anthropic-sdk';
+/**
+ * Which client built the request.
+ *
+ * An ALIAS, not a second declaration. This and `ExchangeMode` in `types.ts`
+ * were the same three-value union written out twice, which was found while
+ * tracing what the web actually imports. Two independent spellings of one
+ * union drift the moment a fourth mode is added to one of them.
+ */
+export type SdkMode = ExchangeMode;
 
 /** How the SDK reported a failure — what a developer's catch block sees. */
 export interface SdkFailure {
@@ -56,29 +68,6 @@ export interface SdkOutcome {
   attempts: Exchange[];
   /** Extra request headers the SDK added that we would never have sent. */
   sdkHeaders: string[];
-}
-
-/** Surfaces each vendor SDK can actually reach, by our surface id. */
-export const OPENAI_SDK_SURFACES = ['chat.completions', 'responses'] as const;
-
-
-/**
- * Surfaces the Anthropic SDK can be pointed at.
- *
- * Empty since 2026-09-02: `/v1/messages` left the tested scope, so there is
- * nowhere for this adapter to run. The adapter itself is kept — it is the only
- * thing that can show what `@anthropic-ai/sdk` extracts from an error, and the
- * finding it produced (a 401 on /v1/messages answered in the OPENAI envelope,
- * so the SDK reads no type and no code) is recorded in the ledger. Restoring
- * the surface is the only thing needed to run it again.
- */
-export const ANTHROPIC_SDK_SURFACES: readonly string[] = [];
-
-export function sdkModesFor(surfaceId: string): SdkMode[] {
-  const modes: SdkMode[] = ['raw'];
-  if ((OPENAI_SDK_SURFACES as readonly string[]).includes(surfaceId)) modes.push('openai-sdk');
-  if ((ANTHROPIC_SDK_SURFACES as readonly string[]).includes(surfaceId)) modes.push('anthropic-sdk');
-  return modes;
 }
 
 /** Headers we send ourselves; anything else came from the SDK. */

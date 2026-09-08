@@ -653,7 +653,8 @@ SSE parsing, `Transport.stream`, the relay, `/api/stream`,
   JS-SDK probe closure: the web imports 17 things from the client package,
   `analyseStream` and `checkResponsesLifecycle` among them, so whatever the UI
   imports survives too. To be *measured* in Phase 8 rather than guessed at a
-  second time.
+  second time. **Measured 2026-09-08 — see §8.2.** The web's runtime closure is
+  3,495 lines, which is exactly why the 5,700-line deletion estimate was wrong.
 - **`/api/governance/burst` does not stream.** It loops and returns plain JSON,
   so "four streaming endpoints" was wrong — there are three. Burst came into 5a
   anyway, being simple and free.
@@ -858,7 +859,53 @@ definition; the pytest file keeps only facts about LiteLLM alone.
 | Step | Action | Gate |
 |---|---|---|
 | 8.1 | Reduce `packages/server` to the JS-SDK probe only | UI green on Python for all 27 endpoints |
-| 8.2 | Delete what the JS-SDK probe does not need from `packages/client`. Under D-3 and D-7 the probe keeps `adapters.ts` (312) + a new `probe.ts` (~150) + wire types (~80), so roughly **5,700 of 6,253 lines are deleted rather than maintained** | typecheck, tests, eslint clean |
+| 8.2 | Delete what the JS-SDK probe does not need from `packages/client`. **Measured 2026-09-08, and the estimate below it was wrong** — see the note. | typecheck, tests, eslint clean |
+
+#### 8.2, measured rather than estimated
+
+The line this replaces claimed **5,700 of 6,253 lines** would be deleted, on the
+assumption that only `adapters.ts` + a thin `probe.ts` + wire types survive. That
+assumption ignored the *other* surviving consumer. The web is not a thin shell
+over the Python engine: it imports 17 value names spanning nine modules, and
+their closure is 3,495 lines that must survive **as executing code**.
+
+| Tier | Modules | Lines | Meaning |
+|---|---|---|---|
+| RUNTIME | 13 | 3,495 | executes in the browser or in the probe |
+| type-only | 4 | 1,727 | `management`, `preflight`, `prompts`, `scenarios` — the consumer needs the *declaration*; the implementation can go once the types are extracted |
+| dead post-8.1 | 4 | 1,087 | `classify`, `client`, `signal`, `transport` |
+
+So the honest figures are **1,087 lines deletable** by finishing 8.1, and
+**2,814 (45%)** if the types are also extracted — not 5,700. Roughly half of
+what the old estimate promised, and the gap is entirely the web's own runtime
+needs, which were never counted.
+
+**None of it is deletable *today*, and the first measurement said otherwise.**
+Two live edges hold: `adapters.ts:30` still imports `Transport` (so
+`transport` → `classify`, `signal` are dead only once D-7 makes the probe thin),
+and `client.ts` is still imported by `preflight.ts:13` *and* by the Node
+backend's `routes.ts`. "Dead" here means dead **after 8.1 and D-7**, which is
+what the tier table is for — a deletion plan that quietly reads a conditional
+figure as an available one deletes something that is still wired in.
+
+**Type-only is a real tier, not a technicality.** The first pass counted every
+import as a dependency, concluded 20 of 21 modules were needed, and would have
+cancelled this step. TypeScript *erases* type imports: the web importing the
+`PromptResult` type does not keep `prompts.ts`'s 692 lines of implementation
+alive. Getting that wrong in the conservative direction is still getting it
+wrong.
+
+**A prerequisite move, done 2026-09-08.** `sdkModesFor` — six lines of pure
+lookup — lived in `adapters.ts`, the one module that loads the real `openai` and
+`@anthropic-ai/sdk` packages. The web imports it, so in the static graph the
+browser build reached the vendor SDKs, and through them transport, classify,
+signal, redact and sse. **The bundle was never affected** — Vite tree-shakes all
+of it, and the built output contains no trace of either SDK — so this was never
+a size problem. It was a *deletion* problem: a static edge is what makes a module
+un-deletable regardless of what ships. Moved to `surfaces.ts`, its natural home
+as a per-surface lookup. Tracing it also turned up `SdkMode` and `ExchangeMode`
+as the same three-value union declared twice; `SdkMode` is now an alias, so the
+public name survives and the duplicate does not.
 | 8.3 | One `README` covering both repos and the split | a new person can run it from the README alone |
 
 **Do not start Phase 8 until Phases 3–6 have been green for a full working
@@ -923,6 +970,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-08 | 8 (pre) | **Measured `packages/client` before deleting from it, and the plan's own 8.2 estimate was wrong** — 5,700 lines claimed, **1,087** actually dead post-8.1 and **2,814** with types extracted. The gap is the web's runtime closure (3,495 lines), which the estimate never counted. Nothing is deletable *today*: `adapters` still imports `Transport`, and `client.ts` is still used by `preflight` and the Node `routes.ts`. Prerequisite landed: **`sdkModesFor` moved `adapters.ts` -> `surfaces.ts`**, severing the web's static edge to the vendor SDKs (the bundle was already clean — this frees a *deletion*, not bytes), and `SdkMode` collapsed to an alias of `ExchangeMode`. | `packages/client/src/{adapters,surfaces,index}.ts`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **7** | **Phase 7 complete, with two of three steps dissolved on inspection.** 7.1's premise was false — the scripts are unique coverage, not engine duplicates — so the full request-layer collapse is declined; its security-critical part is done: **`--no-redact` removed**, the flag that produced BC-1's worst artefacts. 7.2 dropped. 7.3 done better than planned: LiteLLM in-process via `get_supported_openai_params`, no proxy or credential needed. That found **7 missing OpenAI chat fields** in `fields.ts` (incl. `max_completion_tokens`) and, once added, **a false `FIELD_GAPS` claim** that `store` had no chat equivalent. Also pinned a LiteLLM trap: `request_type` silently ignores `"responses"`. 139 tests + 306 collected. | `tokenshield-compat-tests/*`, `packages/client/src/fields.ts`, `scripts/litellm-fields-parity.mjs`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **6** | **Phase 6 complete.** The session registry and the management endpoints — targets, mint, export, probe-models. `lab diff` **62 same, 0 differ**. **Every endpoint is now migrated except `/api/compare`** (D-6). The registry's no-shadowing rule is the same failure D-2 removed from the pytest side. Wiring it in changed `/api/config`, `/api/health` and `_resolve_target`, which the existing gate cases covered for free. The gate caught both add routes wrapping their payload where Node returns it flat. Export verified by comparing real files, since its filename embeds the run instant. 133 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **5b** | **Phase 5b complete; Phase 5 done.** Both runners, plus the case bodies and expectations Phase 1 deferred. `lab diff` **37 same, 0 differ**; 22 prompt bodies gated free via the dry-run, 16 scenario bodies via a new parity script. Live: the free `mcp` suite matched exactly, the prompt runner matched on two cheap cases (~1.5¢). Bodies generated with sentinel substitution rather than transcribed, and the parity script guards that assumption. **20 of 27 endpoints**, 113 tests. | `tokenshield-compat-tests/engine/*`, `scripts/scenario-body-parity.mjs`, `testdata/scenario-bodies.json`, `docs/CONVERGENCE.md` |
