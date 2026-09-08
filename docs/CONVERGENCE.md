@@ -1,9 +1,11 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0, 1 and 2 complete** (2026-09-07). 0.2 withdrawn (D-9); Phases 1
-and 2 both re-scoped smaller after testing their premises.
-Numbering kept as 0.1/0.3/0.4/0.5 because commits already reference it.
-**Next: Phase 3 — read-only endpoints behind the diff gate.**
+**Status:** **Phases 0–3 complete** (2026-09-07). 8 of 27 endpoints on the Python
+engine, each gated by `lab diff`. 0.2 withdrawn (D-9); Phases 1, 2 and 3 all
+re-scoped after testing their premises — Phase 3's re-scope fixed a contradiction,
+since three of its endpoints needed transport, which Phase 2 had deferred to
+Phase 4. Numbering kept because commits reference it.
+**Next: Phase 4 — transport, the Exchange record, and everything that calls a gateway.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -527,16 +529,45 @@ header that *should* differ (`X-Lab-Impl`) would then need whitelisting. If a
 later phase hits a header divergence, extend it then. Recorded in
 `engine/README.md` so the next person does not rediscover it.
 
-### Phase 3 — Read-only endpoints
+### Phase 3 — Data-serving endpoints  ·  **DONE 2026-09-07**
 
-`/api/preflight`, `/api/models`, `/api/runs`, `/api/runs/:id`,
-`/api/prompts/cases`, `/api/scenarios/suites`, `/api/mcp/browse`.
-**Gate:** `lab diff` clean on all seven; UI switched over by changing one port.
+**Re-scoped before starting, and it fixed a contradiction rather than just
+trimming.** The phase was written as seven "read-only" endpoints — but
+`/api/preflight`, `/api/models` and `/api/mcp/browse` call the gateway, and
+Phase 2 deferred `transport` to Phase 4. So Phase 3 as written depended on a
+component scheduled *after* it. The honest split is by what an endpoint does,
+not by whether it mutates: **Phase 3 serves data, Phase 4 calls gateways.** The
+three movers go to Phase 4 with transport.
 
-### Phase 4 — The exchange path
+Migrated: `/api/scenarios/suites`, `/api/prompts/cases`, `GET`+`DELETE`
+`/api/runs`, `/api/runs/{id}`. `DELETE` came along because leaving it 404 on
+Python would break the UI at switchover.
 
-`/api/exchange`, `/api/compare`, `/api/mcp/test`, `/api/mcp/call`,
-`/api/mcp/aggregate`, `/api/tools/loop`.
+**Gate met.** `lab diff` reports **9 same, 0 differ** — including `limit`
+clamping, a junk `limit` falling back rather than 400ing, and the 404 path. Then
+the UI ran end to end against the engine alone with Node stopped: Connect
+renders its targets, Scenarios all four suites at 6/4/4/2 with the spend count
+computed, Prompt lab renders. One line in `.env.local` switches it.
+
+`engine/cases.py` is **generated** from Node's live payloads, not transcribed —
+1,340 lines of TypeScript retyped by hand would differ in small ways the gate
+would surface one at a time, whereas taking the served payload as the source
+makes parity true by construction. Python literals rather than a JSON file:
+that is how the Python repo already writes its own cases, and a literal can
+carry a comment.
+
+**The gate earned its keep on the first run.** The engine advertised
+`mcpServerUrl` as its own port — but `/mock-mcp` is a Node endpoint that has not
+migrated, so it was pointing clients at nothing. Now `TSLAB_MOCK_MCP_ORIGIN`,
+defaulting to the Node backend, with a note to delete the setting when the mock
+moves, so it stops being a lie at the same moment it stops being needed.
+
+### Phase 4 — Anything that calls a gateway
+
+`transport` and the `Exchange` record land here, with the probe-boundary test
+from §6.3. Then `/api/preflight`, `/api/models` and `/api/mcp/browse` (moved
+from Phase 3), plus `/api/exchange`, `/api/compare`, `/api/mcp/test`,
+`/api/mcp/call`, `/api/mcp/aggregate`, `/api/tools/loop`.
 **Gate:** `lab diff` clean; spend-incurring cases run once, by hand, with the
 cost stated first.
 
@@ -632,6 +663,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **3** | **Phase 3 complete.** Six data-serving endpoints migrated; `lab diff` 9 same, 0 differ; UI verified running on the engine alone. Re-scoped first, which this time fixed a contradiction: three of the seven listed endpoints call the gateway, and transport was deferred to Phase 4 — the phase depended on a component scheduled after it. `engine/cases.py` generated from Node's payloads rather than transcribed. The gate caught a real bug immediately: the engine advertised a `/mock-mcp` URL for a server it does not host. 33 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **2** | **Phase 2 complete.** FastAPI engine on 8801 serving `/api/health` and `/api/config`; `lab diff` clean on the first run. Scope trimmed again after testing the premise: `transport` and `Exchange` deferred to Phase 4, since neither endpoint touches a gateway. 20 tests including the public-view leak test. Two defects found by hand that the gate missed — a content-type divergence (now matched, and the gate's header-blindness recorded) and one test of mine that assumed U+2026 would survive `json.dumps` defaults. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **1** | **Phase 1 complete, after re-scoping it from three steps to one.** Testing the premise showed no language-neutral case format is needed — only the server reads case definitions, and the sole obstacle was `Scenarios.tsx` importing `SUITES` while its sibling page already fetched. Made it fetch. Dropped 1.1 and 1.3 as artefacts serving a requirement that does not exist. Bundle fell 338.29 → 330.65 kB. | `packages/web/src/api.ts`, `packages/web/src/pages/Scenarios.tsx`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.2** | **Withdrawn (D-9)** — not merely closed. The step was a rotate-on-exposure reflex applied before measuring the exposure; measuring showed it unnecessary. Recorded as a second tripwire in §9, because the real cost was a plan blocking on an unverified premise. | `docs/CONVERGENCE.md` |

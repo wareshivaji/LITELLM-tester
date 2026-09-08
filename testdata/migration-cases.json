@@ -7,9 +7,12 @@
       { "Pattern": "uptimeSeconds", "Why": "seconds since each backend started; they were started minutes apart" }
     ]
   },
-  {
-    "Name": "config",
-    "Method": "GET",
-    "Path": "/api/config"
-  }
+  { "Name": "config",           "Method": "GET", "Path": "/api/config" },
+  { "Name": "scenario suites",  "Method": "GET", "Path": "/api/scenarios/suites" },
+  { "Name": "prompt cases",     "Method": "GET", "Path": "/api/prompts/cases" },
+  { "Name": "runs (default)",   "Method": "GET", "Path": "/api/runs" },
+  { "Name": "runs (limit=5)",   "Method": "GET", "Path": "/api/runs?limit=5" },
+  { "Name": "runs (limit=9999 clamps)", "Method": "GET", "Path": "/api/runs?limit=9999" },
+  { "Name": "runs (limit=junk falls back)", "Method": "GET", "Path": "/api/runs?limit=abc" },
+  { "Name": "runs/:id unknown -> 404", "Method": "GET", "Path": "/api/runs/no-such-exchange" }
 ]
