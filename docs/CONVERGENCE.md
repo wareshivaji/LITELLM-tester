@@ -1,9 +1,9 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0 and 1 complete** (2026-09-07). 0.2 withdrawn (D-9); Phase 1
-re-scoped from three steps to one after testing its premise.
+**Status:** **Phases 0, 1 and 2 complete** (2026-09-07). 0.2 withdrawn (D-9); Phases 1
+and 2 both re-scoped smaller after testing their premises.
 Numbering kept as 0.1/0.3/0.4/0.5 because commits already reference it.
-**Next: Phase 2 — Python engine skeleton.**
+**Next: Phase 3 — read-only endpoints behind the diff gate.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -512,8 +512,20 @@ instead, which is the stronger check for a UI change.
 
 | Step | Action | Gate |
 |---|---|---|
-| 2.1 | FastAPI on a second port; `config` (§6.1 alias slots), `redact` (the only deep impl), `transport`, `Exchange` | unit tests, including the redaction leak tests ported from `redact.test.ts`, **plus a probe-boundary test asserting no key value can cross it** (§6.3) |
-| 2.2 | `/api/health`, `/api/config` only | `lab diff -a node -b python` → 0 differences |
+| 2.1 | FastAPI on port 8801; `config` (§6.1 alias slots) and `mask` (the only deep impl). ~~`transport`, `Exchange`~~ **deferred to Phase 4** — neither migrated endpoint touches a gateway, so porting them here would build ahead of the requirement. The probe-boundary test moves with them. | **DONE 2026-09-07** — 20 tests. The one that matters serialises the whole public view and asserts no part of a credential appears in it, searched rather than field-by-field so a leak in a warning string is caught too. |
+| 2.2 | `/api/health`, `/api/config` only | **DONE 2026-09-07** — `lab diff` reports **2 same, 0 differ**, first run. Cases in `testdata/migration-cases.json`; `uptimeSeconds` declared volatile, since the two backends started minutes apart. |
+
+**Found by hand, not by the gate.** Content-type differed — Fastify sends
+`application/json; charset=utf-8`, Starlette sends `application/json`.
+Functionally identical for JSON, visibly different to a client. Matched in a
+`LabJSON` subclass.
+
+Worth recording as a limitation of the gate itself: **`lab diff` compares status
+and body, not headers.** Not fixed by extending the differ — one field does not
+justify a second volatility mechanism alongside the body one, since the only
+header that *should* differ (`X-Lab-Impl`) would then need whitelisting. If a
+later phase hits a header divergence, extend it then. Recorded in
+`engine/README.md` so the next person does not rediscover it.
 
 ### Phase 3 — Read-only endpoints
 
@@ -620,6 +632,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **2** | **Phase 2 complete.** FastAPI engine on 8801 serving `/api/health` and `/api/config`; `lab diff` clean on the first run. Scope trimmed again after testing the premise: `transport` and `Exchange` deferred to Phase 4, since neither endpoint touches a gateway. 20 tests including the public-view leak test. Two defects found by hand that the gate missed — a content-type divergence (now matched, and the gate's header-blindness recorded) and one test of mine that assumed U+2026 would survive `json.dumps` defaults. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **1** | **Phase 1 complete, after re-scoping it from three steps to one.** Testing the premise showed no language-neutral case format is needed — only the server reads case definitions, and the sole obstacle was `Scenarios.tsx` importing `SUITES` while its sibling page already fetched. Made it fetch. Dropped 1.1 and 1.3 as artefacts serving a requirement that does not exist. Bundle fell 338.29 → 330.65 kB. | `packages/web/src/api.ts`, `packages/web/src/pages/Scenarios.tsx`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.2** | **Withdrawn (D-9)** — not merely closed. The step was a rotate-on-exposure reflex applied before measuring the exposure; measuring showed it unnecessary. Recorded as a second tripwire in §9, because the real cost was a plan blocking on an unverified premise. | `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.3–0.5** | **Phase 0 closed** except the user action. 0.3: `git init` on the Python repo (`fea3c7c`), plus `.gitattributes` to stop CRLF churn; history verified to contain no credential. A pre-commit scan initially aborted on `cg-ak-XXXXXXXX` in `MANAGEMENT_API_SPEC.md` — a documentation placeholder the 0.1 gate excluded but the shell scan did not; the two checks now share one rule, because otherwise each blocks on the other's false positive. 0.4: ledgers merged into 26 entries, +6 new, 3 independently confirmed, one contradiction left open. 0.5: 5 convention comments placed in code. Verified after: 167 tests collect, 40 files compile, TS clean. | `tokenshield-compat-tests/*`, `docs/FINDINGS.md`, `packages/server/src/config.ts`, `docs/CONVERGENCE.md` |
