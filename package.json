@@ -29,7 +29,8 @@
     "vet:go": "go -C go vet ./...",
     "build:go": "go -C go build -o ../bin/lab ./cmd/lab",
     "check:drift": "npm run build:go && bin/lab check",
-    "diff:reference": "npm run build:go && bin/lab diff -a https://gateway.cloudgov.ai -a-name tokenshield -b http://127.0.0.1:4001 -b-name litellm -cases testdata/reference-cases.json"
+    "diff:reference": "npm run build:go && bin/lab diff -a https://gateway.cloudgov.ai -a-name tokenshield -b http://127.0.0.1:4001 -b-name litellm -cases testdata/reference-cases.json",
+    "sse:parity": "npm run build:client && node scripts/sse-parity.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

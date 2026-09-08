@@ -385,5 +385,69 @@
       "profile": "prod-us",
       "model": "bedrock-claude-haiku-4.5"
     }
+  },
+  {
+    "Name": "stream: unknown surface -> 400",
+    "Method": "POST",
+    "Path": "/api/stream",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "surfaceId": "no.such.surface"
+    }
+  },
+  {
+    "Name": "stream: non-streamable surface -> 400",
+    "Method": "POST",
+    "Path": "/api/stream",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "surfaceId": "mcp.servers"
+    }
+  },
+  {
+    "Name": "stream: misnamed target -> 400",
+    "Method": "POST",
+    "Path": "/api/stream",
+    "Body": {
+      "surfaceId": "chat.completions",
+      "profile": "prod-us"
+    }
+  },
+  {
+    "Name": "burst: no key -> 400",
+    "Method": "POST",
+    "Path": "/api/governance/burst",
+    "Body": {
+      "profileId": "prod-us"
+    }
+  },
+  {
+    "Name": "burst: 3 requests, free",
+    "Method": "POST",
+    "Path": "/api/governance/burst",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "count": 3
+    },
+    "Volatile": [
+      {
+        "Pattern": "elapsedMs",
+        "Why": "wall-clock duration of the burst"
+      },
+      {
+        "Pattern": "firstExchangeId",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "rejectedExchangeId",
+        "Why": "same"
+      }
+    ]
   }
 ]
