@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "health",
+    "Method": "GET",
+    "Path": "/api/health",
+    "Volatile": [
+      { "Pattern": "uptimeSeconds", "Why": "seconds since each backend started; they were started minutes apart" }
+    ]
+  },
+  {
+    "Name": "config",
+    "Method": "GET",
+    "Path": "/api/config"
+  }
+]
