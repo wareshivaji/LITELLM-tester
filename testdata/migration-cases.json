@@ -535,5 +535,227 @@
         }
       ]
     }
+  },
+  {
+    "Name": "targets/profiles: no url -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/profiles",
+    "Body": {
+      "label": "X"
+    }
+  },
+  {
+    "Name": "targets/profiles: not a URL -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/profiles",
+    "Body": {
+      "label": "X",
+      "baseUrl": "not-a-url"
+    }
+  },
+  {
+    "Name": "targets/profiles: ftp scheme -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/profiles",
+    "Body": {
+      "label": "X",
+      "baseUrl": "ftp://host"
+    }
+  },
+  {
+    "Name": "targets/profiles: credentials in URL -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/profiles",
+    "Body": {
+      "label": "X",
+      "baseUrl": "https://u:p@host"
+    }
+  },
+  {
+    "Name": "targets/profiles: query string -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/profiles",
+    "Body": {
+      "label": "X",
+      "baseUrl": "https://host?a=1"
+    }
+  },
+  {
+    "Name": "targets/profiles: collides with a file profile -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/profiles",
+    "Body": {
+      "label": "Prod US",
+      "baseUrl": "https://other.example.com"
+    }
+  },
+  {
+    "Name": "targets/profiles: ADD a session gateway",
+    "Method": "POST",
+    "Path": "/api/targets/profiles",
+    "Body": {
+      "label": "Staging Lab",
+      "baseUrl": "https://staging.example.com/gw/"
+    }
+  },
+  {
+    "Name": "config: the session gateway now appears",
+    "Method": "GET",
+    "Path": "/api/config"
+  },
+  {
+    "Name": "health: sessionTargets counts it",
+    "Method": "GET",
+    "Path": "/api/health",
+    "Volatile": [
+      {
+        "Pattern": "uptimeSeconds",
+        "Why": "the two backends started minutes apart"
+      }
+    ]
+  },
+  {
+    "Name": "targets/profiles: DELETE it",
+    "Method": "DELETE",
+    "Path": "/api/targets/profiles/staging-lab"
+  },
+  {
+    "Name": "targets/profiles: DELETE a file profile -> 400",
+    "Method": "DELETE",
+    "Path": "/api/targets/profiles/prod-us"
+  },
+  {
+    "Name": "targets/profiles: DELETE an unknown -> 400",
+    "Method": "DELETE",
+    "Path": "/api/targets/profiles/ghost"
+  },
+  {
+    "Name": "targets/keys: no alias -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/keys",
+    "Body": {
+      "secret": "cg-ak-0000000000000000"
+    }
+  },
+  {
+    "Name": "targets/keys: bad alias chars -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/keys",
+    "Body": {
+      "alias": "-nope",
+      "secret": "cg-ak-0000000000000000"
+    }
+  },
+  {
+    "Name": "targets/keys: secret too short -> 400",
+    "Method": "POST",
+    "Path": "/api/targets/keys",
+    "Body": {
+      "alias": "SHORT",
+      "secret": "abc"
+    }
+  },
+  {
+    "Name": "targets/keys: alias shadowing is refused",
+    "Method": "POST",
+    "Path": "/api/targets/keys",
+    "Body": {
+      "alias": "PROD_TOOL_BLOCKING",
+      "secret": "cg-ak-0000000000000000000"
+    }
+  },
+  {
+    "Name": "targets/keys: ADD with a wrong prefix warns but succeeds",
+    "Method": "POST",
+    "Path": "/api/targets/keys",
+    "Body": {
+      "alias": "SESSION_ODD",
+      "secret": "sk-not-a-cloudgov-key-000"
+    }
+  },
+  {
+    "Name": "targets/keys: DELETE it",
+    "Method": "DELETE",
+    "Path": "/api/targets/keys/SESSION_ODD"
+  },
+  {
+    "Name": "targets/keys: DELETE a file key -> 400",
+    "Method": "DELETE",
+    "Path": "/api/targets/keys/PROD_TOOL_BLOCKING"
+  },
+  {
+    "Name": "keys/mint: no management key -> 400",
+    "Method": "POST",
+    "Path": "/api/keys/mint",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "request": {
+        "name": "x"
+      }
+    }
+  },
+  {
+    "Name": "keys/mint: an api key is not a management key -> 400",
+    "Method": "POST",
+    "Path": "/api/keys/mint",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "managementAlias": "PROD_TOOL_BLOCKING",
+      "request": {
+        "name": "x"
+      }
+    }
+  },
+  {
+    "Name": "keys/mint: no spec -> 400",
+    "Method": "POST",
+    "Path": "/api/keys/mint",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "managementAlias": "TESTING_KEY_1"
+    }
+  },
+  {
+    "Name": "keys/mint: spec with no name -> 400",
+    "Method": "POST",
+    "Path": "/api/keys/mint",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "managementAlias": "TESTING_KEY_1",
+      "request": {}
+    }
+  },
+  {
+    "Name": "scenarios/export: nothing to export yet -> 400",
+    "Method": "POST",
+    "Path": "/api/scenarios/export"
+  },
+  {
+    "Name": "probe-models: two candidates, free",
+    "Method": "POST",
+    "Path": "/api/governance/probe-models",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "models": [
+        "gpt-4o",
+        "bedrock-claude-haiku-4.5"
+      ]
+    },
+    "Volatile": [
+      {
+        "Pattern": "results.*.exchangeId",
+        "Why": "a fresh uuid per exchange"
+      }
+    ]
   }
 ]

@@ -1,12 +1,12 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–5 complete** (2026-09-07). **20 of 27 endpoints** on the Python
-engine, each gated by `lab diff` (37 cases, all clean), plus two parity scripts —
-the SSE parser on a recorded byte fixture and all 16 scenario bodies. `/api/compare`
-stays in Node permanently (D-6). 0.2 withdrawn (D-9); every phase re-scoped after
-testing its premise, and twice a documented deferral was caught by the gate at the
-moment it came due.
-**Next: Phase 6 — the stateful and management endpoints.**
+**Status:** **Phases 0–6 complete** (2026-09-07). **Every endpoint is on the Python
+engine except `/api/compare`**, which D-6 keeps in Node permanently. `lab diff` runs
+62 cases, all clean, plus two parity scripts — the SSE parser on a recorded byte
+fixture and all 16 scenario bodies. 133 engine tests. 0.2 withdrawn (D-9); every
+phase re-scoped after testing its premise, and twice a documented deferral was caught
+by the gate at the moment it came due.
+**Next: Phase 7 — absorb the compat suite, and LiteLLM in-process.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -722,11 +722,60 @@ rather than `landmine-changed`, since the latter reads as "the bug may be fixed
 here" when nothing was measured; and `bodyPath: true` means *present*, not
 *equal to true*, so a field whose value is `false` still counts.
 
-### Phase 6 — Stateful and management
+### Phase 6 — Stateful and management  ·  **DONE 2026-09-07**
 
-`/api/targets/*`, `/api/keys/mint`, `/api/scenarios/export`,
-`/api/governance/probe-models`. Uses `MANAGEMENT_API_SPEC.md`.
-**Gate:** `lab diff` clean; `DELETE` paths tested against a disposable key.
+`POST`/`DELETE` on `/api/targets/profiles` and `/api/targets/keys`,
+`/api/keys/mint`, `/api/scenarios/export`, `/api/governance/probe-models`.
+
+**Gate met:** `lab diff` **62 same, 0 differ** — up from 37, including a real
+add / read-back / remove round trip for both session profiles and session keys.
+
+**That completes every endpoint** except `/api/compare`, which D-6 keeps in Node
+permanently.
+
+**The registry is the substance, and its rule connects back to D-2.** An alias
+may never be shadowed: adding a session key whose alias already exists is
+*refused*, not silently preferred. That is the same failure D-2 removed from the
+pytest side — a stale `TS_KEY` outranking `TOKENSHIELD_API_KEY` made a whole run
+authenticate as the wrong key — and a friendlier form of it would be worse, not
+better. Tested from both directions, plus that a rejected shadow leaves the
+original still resolving.
+
+Wiring it in **changed existing code** rather than only adding: `/api/config`
+and `/api/health` now report the registry's view and `_resolve_target` consults
+it. The gate covered that for free — those cases were already in the file and
+stayed green.
+
+`Transport.send` gained a **per-call secret override** for the one call that
+presents a different credential from the transport's own: minting needs the
+management key while the target still carries the api key. Per-call rather than
+a second transport, so the exchange stays attributed to the same target.
+
+**Minting is the only response in the tool containing a live credential.** The
+exchange is redacted before it reaches the store — success path *and* failure
+path — and the body is re-parsed from the scrubbed text so the structured copy
+cannot disagree with the raw one. A mismatch there would leave the key visible
+in the inspector while the text looked clean.
+
+**The gate caught one real mistake immediately:** both add routes returned their
+payload wrapped in `{"profile": …}` / `{"key": …}` where Node returns it flat,
+with `warning` spread alongside rather than nested. The UI reads those fields
+straight off the response.
+
+**One endpoint the differ can only partly gate.** `/api/scenarios/export`
+embeds the run instant in its filename, so two runs never produce the same name
+and `lab diff` reaches only the nothing-to-export-yet path. Verified instead by
+running the free `mcp` suite on both, exporting from both, and comparing: same
+`out/` directory, both wrote JSON and Markdown, Markdown **identical** once the
+run line is normalised.
+
+**A stale note kept deliberately.** `report.py` is ported verbatim, including a
+line saying the `litellm` reference is "not verified against a local LiteLLM
+here" — which stopped being true on 2026-09-06. Correcting it on one side alone
+would fail the gate for a reason unrelated to the migration, so it stays
+identical and is flagged in the module docstring for a paired change.
+
+133 tests.
 
 ### Phase 7 — Absorb the compat suite
 
@@ -806,6 +855,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **6** | **Phase 6 complete.** The session registry and the management endpoints — targets, mint, export, probe-models. `lab diff` **62 same, 0 differ**. **Every endpoint is now migrated except `/api/compare`** (D-6). The registry's no-shadowing rule is the same failure D-2 removed from the pytest side. Wiring it in changed `/api/config`, `/api/health` and `_resolve_target`, which the existing gate cases covered for free. The gate caught both add routes wrapping their payload where Node returns it flat. Export verified by comparing real files, since its filename embeds the run instant. 133 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **5b** | **Phase 5b complete; Phase 5 done.** Both runners, plus the case bodies and expectations Phase 1 deferred. `lab diff` **37 same, 0 differ**; 22 prompt bodies gated free via the dry-run, 16 scenario bodies via a new parity script. Live: the free `mcp` suite matched exactly, the prompt runner matched on two cheap cases (~1.5¢). Bodies generated with sentinel substitution rather than transcribed, and the parity script guards that assumption. **20 of 27 endpoints**, 113 tests. | `tokenshield-compat-tests/engine/*`, `scripts/scenario-body-parity.mjs`, `testdata/scenario-bodies.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **5a** | **Phase 5a complete.** SSE parsing, `Transport.stream`, the relay, `/api/stream`, `/api/governance/burst`. `lab diff` **30 same, 0 differ**; the parser byte-identical to the TypeScript on a recorded fixture via `npm run sse:parity`. The premise check dropped `stream.ts` (browser-side analysis, not the server's) and corrected "four streaming endpoints" to three. The gate caught `label` — a Phase 3 deferral coming due. Live relay verified structurally; a 5-vs-4 frame count was the provider, not the reader. **18 of 27 endpoints**, 95 tests. | `tokenshield-compat-tests/engine/*`, `scripts/sse-parity.mjs`, `testdata/sse/*`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **4b** | **Phase 4b complete.** Seven endpoints — models, preflight, mcp/browse, mcp/test, mcp/call, mcp/aggregate, tools/loop. `lab diff` **25 same, 0 differ**. `/api/compare` excluded by D-6, not deferred: it drives the real vendor npm SDKs. `tools/loop` gated on validation paths and compared structurally on a live round-trip, since a strict diff of model output would be theatre. Ported the two corrections the TypeScript carries as comments — `summarise_turn` must be told its surface, and `check_tool_calls` must NOT flag a missing `index`. **16 of 27 endpoints.** | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
