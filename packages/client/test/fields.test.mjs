@@ -43,10 +43,17 @@ for (const f of ['stop', 'n', 'seed', 'logit_bias', 'frequency_penalty', 'presen
 truthy('stop really is absent from the responses contract', !RESPONSES_FIELDS.includes('stop'));
 
 // And the other direction.
+//
+// `store` was in this list until 2026-09-07 and should not have been. Checking
+// the tables against LiteLLM in-process showed OpenAI accepts `store` on chat
+// completions too, so it is not lost by porting — the gap entry claiming it was
+// framed a non-existent divergence as a data-residency question. The entry is
+// gone and the field is now asserted to SURVIVE a port, which is the true fact.
 const lostLeavingResponses = gapsMovingTo('chat.completions').map((g) => g.field);
-for (const f of ['instructions', 'previous_response_id', 'store', 'truncation']) {
+for (const f of ['instructions', 'previous_response_id', 'truncation']) {
   truthy(`moving to chat loses ${f}`, lostLeavingResponses.includes(f));
 }
+truthy('store is on BOTH surfaces, so a port keeps it', sharedFields().includes('store'));
 
 check(
   'a gap is attributed to the surface that HAS the field',

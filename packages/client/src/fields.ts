@@ -28,7 +28,22 @@
  * stop entirely.
  */
 
-/** Chat Completions, from `ChatCompletionRequest`. */
+/**
+ * Chat Completions, from `ChatCompletionRequest`.
+ *
+ * The last seven were added 2026-09-07 after checking this table against
+ * LiteLLM IN-PROCESS rather than by re-reading its source: a hand transcription
+ * rots silently, and `litellm_reference_test.py` in the compat repo now makes it
+ * rot loudly instead. `litellm.get_supported_openai_params` declared all seven
+ * and this list had none of them.
+ *
+ * `max_completion_tokens` is the one that matters. It is OpenAI's replacement
+ * for `max_tokens`, so a client on a current SDK sends it as a matter of course
+ * — and a reference table that does not know the field cannot tell you whether
+ * the gateway honours it. None of the seven has had its gateway handling
+ * measured yet; they are listed because they are part of the surface, not
+ * because anything is known about them here.
+ */
 export const CHAT_FIELDS: readonly string[] = [
   'model',
   'messages',
@@ -57,6 +72,15 @@ export const CHAT_FIELDS: readonly string[] = [
   'metadata',
   'reasoning_effort',
   'output_config',
+  // Added 2026-09-07 from LiteLLM's own declaration. Gateway handling
+  // unmeasured — see the note above.
+  'max_completion_tokens',
+  'store',
+  'audio',
+  'modalities',
+  'prediction',
+  'prompt_cache_retention',
+  'web_search_options',
 ];
 
 /** Responses, from `ResponsesAPIRequestParams`. */
@@ -192,13 +216,15 @@ export const FIELD_GAPS: readonly FieldGap[] = [
     equivalent: null,
     consequence:
       'Server-side conversation continuation. Chat has no equivalent — the client resends the whole history every turn.',
-  },
-  {
-    field: 'store',
-    on: 'responses',
-    equivalent: null,
-    consequence: 'Whether the provider retains the response. No chat equivalent, and a real data-residency question.',
-  },
+  },  // REMOVED 2026-09-07. This claimed `store` had "no chat equivalent" and was
+  // "a real data-residency question" — and it was wrong: OpenAI accepts `store`
+  // on chat completions and LiteLLM declares it there. The error survived
+  // because the chat table was missing the field, so nothing contradicted it;
+  // adding the field made the fields.test.mjs invariant fail immediately.
+  //
+  // A gap entry that invents a difference is worse than a missing one: this one
+  // framed a non-existent divergence as a data-residency decision someone could
+  // have acted on.
   {
     field: 'truncation',
     on: 'responses',
