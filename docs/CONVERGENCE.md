@@ -1,6 +1,6 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–7 complete**; **8.1 and 8.2 done — the Node backend is retired and 1,164 dead lines are gone** (2026-09-08). Only **8.3** remains. **Every endpoint is on the Python
+**Status:** **COMPLETE — all nine phases** (2026-09-08). The Node backend is retired; the Python engine serves all 31 endpoints; what remains of Node is one 182-line CLI probe that drives the real vendor SDKs, which is D-6 and permanent. 3,346 lines deleted in Phase 8. Live gates: 4 parity scripts, 170 engine tests, 9 TypeScript suites, typecheck, eslint. **Every endpoint is on the Python
 engine except `/api/compare`**, which D-6 keeps in Node permanently. `lab diff` runs
 62 cases, all clean, plus **three** parity scripts — the SSE parser on a recorded byte
 fixture, all 16 scenario bodies, and `fields.ts` against LiteLLM in-process. 139
@@ -8,7 +8,7 @@ engine+reference tests, 306 collected across the compat suite. 0.2 withdrawn (D-
 every phase re-scoped after testing its premise, twice a documented deferral was
 caught by the gate at the moment it came due, and in Phase 7 two of three steps
 dissolved on inspection.
-**Next: Phase 8.3 — one README covering both repos, and the stale `service` name.**
+**Complete.** All nine phases done, 2026-09-08. See §8.3 for the final state.
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -1131,6 +1131,76 @@ as the same three-value union declared twice; `SdkMode` is now an alias, so the
 public name survives and the duplicate does not.
 | 8.3 | One `README` covering both repos and the split | a new person can run it from the README alone |
 
+#### 8.3 — the documentation, and four things it was wrong about
+
+**DONE 2026-09-08. Phase 8 complete, and with it the plan.**
+
+`README.md` rewritten as the single entry point for both repos: what the lab is,
+the three parts and the one line they are split along, how to run it, the four
+gates and what each holds down, where every other document is. `engine/README.md`
+rewritten too — it opened with "the backend that *will* serve the lab UI,
+replacing the Node/Fastify one endpoint at a time" and had sections headed
+"Migrated so far" and "Not here yet, on purpose" listing endpoints that have
+been there for a day.
+
+**The gate is "a new person can run it from the README alone", so the claims
+were checked rather than written.** Four were wrong:
+
+1. **Step 1 told the reader to copy a file that did not exist.** There was no
+   `.env.local.example`. That is the single worst kind of documentation error —
+   the first instruction fails. Written, with every variable annotated, and
+   *verified by pointing `LabConfig` at it*: 3 profiles, default `local`, no
+   warnings. It also needed `!.env.local.example` in `.gitignore`, because
+   `.env.*` would have swallowed it.
+2. **"26 findings" was 25** (17 `F-`, 8 `LM-`). My count had missed that three
+   entries use letter suffixes — `LM-T1`, `LM-T2`, `LM-M1` — so a `(F|LM)-[0-9]+`
+   regex skipped them, and ten more live in a table rather than under headings.
+3. **"30 endpoints" was 31.** The same number the route-count error in 8.1a was
+   about. Getting it wrong twice in one phase is the argument for measuring it.
+4. **"180-line probe" was 182.**
+
+**The stale `service` name, deferred from 8.1b, is fixed.** `/api/health`
+reported `"service": "tokenshield-lab-server"` — correct while the payload had
+to be byte-identical to Node's, and simply wrong once that backend was deleted.
+Now `tokenshield-lab-engine`. Safe because nothing renders it: the web never
+reads the field, and the only thing that compared it was `lab diff`, which needs
+two backends. The two stale comments beside it went too — `VERSION` still said
+"bump both together or the gate fails".
+
+**What the README deliberately says out loud**, because a reader who does not
+know it will be misled: that `lab diff` no longer exists and the 80-case file is
+historical; that the `compare-parity` gate is free by construction rather than
+by restraint; and the two traps that cost afternoons — a loopback MCP URL
+measuring an AWS load balancer, and LiteLLM's `request_type` silently ignoring
+`"responses"`.
+
+---
+
+## Final state
+
+| | |
+|---|---|
+| **engine** | Python/FastAPI, `:8801`, **31 endpoints**, 170 tests |
+| **web** | React/Vite, `:5173`, 8 pages |
+| **probe** | one 182-line Node CLI, spawned per call |
+| **`packages/client`** | 16 modules, 5,089 lines (was 21 / 6,253) |
+| **gates** | 4 parity scripts · 170 engine tests · 9 TypeScript suites (318 assertions) · typecheck · eslint |
+| **deleted in Phase 8** | 3,346 lines — 2,182 of Node backend, 1,164 of dead client |
+
+**Every phase was re-scoped after testing its premise, and that changed the work
+in seven of nine.** Two steps in Phase 7 dissolved entirely; Phase 1 went from
+three steps to one; Phase 5a dropped a module; Phase 3 turned up a contradiction
+in the plan itself. Twice a documented deferral was caught by the gate at the
+exact moment it came due. Phase 8 found a blocker the plan had never recorded —
+four endpoints nobody had counted — and corrected a deletion estimate that was
+too high by a factor of two.
+
+**The recurring failure was arithmetic asserted rather than measured**: 27
+endpoints that were 31, 5,700 deletable lines that were 1,087, 26 test files
+that were 9 suites, 26 findings that were 25. Every one of those numbers had
+been written down confidently and none had been counted. The gates caught the
+behaviour; nothing was checking the prose.
+
 **Do not start Phase 8 until Phases 3–6 have been green for a full working
 session.** Retiring the fallback is the irreversible step.
 
@@ -1198,6 +1268,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-08 | **8.3** | **Phase 8 complete, and the plan with it.** `README.md` rewritten as the single entry point for both repos; `engine/README.md` rewritten (it still described an unfinished migration). Checking the claims rather than writing them found four wrong: **there was no `.env.local.example`**, so the first instruction failed — written, annotated, and verified by parsing it with `LabConfig`; **26 findings was 25**; **30 endpoints was 31**; **180-line probe was 182**. The `service` name deferred from 8.1b is fixed — `tokenshield-lab-server` → `tokenshield-lab-engine`, plus two stale comments beside it. | `README.md`, `.env.local.example`, `.gitignore`, `engine/README.md`, `engine/app.py`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | **8.2** | **1,164 lines deleted from `packages/client`** — `transport` (616), `preflight` (282), `client` (211), `classify` (193), `signal` (67). 21 modules / 6,253 lines → **16 / 5,089**. The measurement's four dead modules were exactly right; `preflight` came too, because its whole surviving purpose was the `McpEntitlement` interface — the web's `runPreflight` is its own local `useCallback`, not the import. That interface moved to `mcp.ts` (not `types.ts`, which would cycle). `classify.test.mjs` deleted after checking every case it pinned is present in Python's `test_classify.py`. **Bundle unchanged at 330.60 kB**, as predicted — the modules were already tree-shaken, so this was a deletion fix and never a size one. Also corrects "26 TypeScript test files", which I reported three times and which was the last suite's assertion count: really **9 suites, 318 assertions**. | `packages/client/src/*`, `packages/client/package.json`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | **8.1b** | **The Node backend is retired.** 2,182 lines deleted across six modules; what remains of Node is one 180-line `probe.ts`. `packages/server` → `packages/probe`, `fastify` dependency gone, web proxy default 8787 → 8801. `/api/compare` is Python spawning the probe over stdin; verified in the browser end to end — vite → engine → subprocess → real `openai` package → gateway → Python's classifier → UI, both clients 401 on a dummy key at zero spend. **D-7 refined: the duplicated masker it budgeted for is zero**, because `redact.ts` stays in the browser bundle for `toCurl` and the probe imports the same `redactHeaders`. New gate `scripts/compare-parity.mjs`, 8 cases structure-matched against a recorded reference — needed because I changed the reference implementation before capturing it, and had to revert to recover it. **`lab diff` node-vs-python can no longer run**: the 80-case file is now historical, and the live gates are 4 parity scripts + 156 engine tests + 26 TS test files. | `packages/probe/*`, `packages/client/src/{adapters,index}.ts`, `packages/web/vite.config.ts`, `scripts/compare-parity.mjs`, `testdata/compare-reference.json`, `tokenshield-compat-tests/engine/{probe,surfaces,app}.py`, `docs/CONVERGENCE.md` |
 | 2026-09-08 | **8.1a** | **Mock MCP server ported to Python — a Phase 8 blocker the plan never recorded.** Node registers **31** routes, not the 27 the plan claimed; the four `mock-mcp` routes were the last it served alone, and retiring it would have pointed every `declared`-mode MCP case at a dead URL. The port found a real defect in code ported six days earlier: `summarise_credential_exposure` answered a different question from its TypeScript namesake and could not see a gateway key in a non-credential header — the exact leak the mock exists to detect. It diverged silently because its only consumer had not been ported yet. Now on the TS contract, parity-checked over 8 header sets. **`lab diff` 80 same, 0 differ** (was 62 cases); 156 engine tests (was 139). `hang` mode, the bounded ring and the no-leak property are asserted rather than diffed, each for a reason the differ cannot overcome. | `tokenshield-compat-tests/engine/{mock_mcp,mcp,redact,config,app}.py`, `engine/tests/test_mock_mcp.py`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |

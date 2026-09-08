@@ -10,6 +10,9 @@ dist/
 # Never commit it. .env.example is the documented, key-free template.
 .env
 .env.*
+# ...except the template, which must be committed and must never hold a
+# real value. The rule above would otherwise swallow it.
+!.env.local.example
 !.env.example
 
 # Exported run reports (Phase 7). Local evidence, not source.
