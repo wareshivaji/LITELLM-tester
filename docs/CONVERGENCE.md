@@ -1,11 +1,10 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phases 0–3 and 4a complete** (2026-09-07). **9 of 27 endpoints** on the
-Python engine, each gated by `lab diff` (currently 15 cases, all clean). 0.2
-withdrawn (D-9); every phase since has been re-scoped after testing its premise —
-Phase 3's re-scope fixed a contradiction, and Phase 4 was split because its
-foundation is what everything else depends on.
-**Next: Phase 4b — the remaining eight gateway-calling endpoints.**
+**Status:** **Phases 0–4 complete** (2026-09-07). **16 of 27 endpoints** on the Python
+engine, each gated by `lab diff` (25 cases, all clean). Every gateway-calling
+endpoint is migrated except `/api/compare`, which D-6 keeps in Node permanently.
+0.2 withdrawn (D-9); every phase has been re-scoped after testing its premise.
+**Next: Phase 5 — the four streaming endpoints.**
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -597,13 +596,34 @@ the fix. A run-list case now runs **after** the exchanges — which is what had
 caught it in the first place. A gate that only checks the empty state is not
 checking the interesting one.
 
-#### 4b — the remaining eight  ·  not started
+#### 4b — the remaining seven  ·  **DONE 2026-09-07**
 
-`/api/preflight`, `/api/models`, `/api/mcp/browse` (moved from Phase 3), plus
-`/api/compare`, `/api/mcp/test`, `/api/mcp/call`, `/api/mcp/aggregate`,
-`/api/tools/loop`. Variations on 4a.
-**Gate:** `lab diff` clean; spend-incurring cases run once, by hand, with the
-cost stated first.
+`/api/models`, `/api/preflight`, `/api/mcp/browse`, `/api/mcp/test`,
+`/api/mcp/call`, `/api/mcp/aggregate`, `/api/tools/loop`.
+
+**Gate met:** `lab diff` **25 same, 0 differ** — up from 15 — including
+preflight running all six checks live against Prod US, and the 53-model
+catalogue (so JavaScript's `localeCompare` and Python's sort agree for these
+ids, which was not a given).
+
+**`/api/compare` is not migrated, and that is D-6 rather than a deferral.** It
+drives the real `openai` and `@anthropic-ai/sdk` npm packages, and seeing what a
+vendor SDK constructs is the entire point of that page. Node keeps it, and in
+Phase 8 it becomes the thin probe of D-7. So 4b is seven endpoints, not eight.
+
+**One endpoint the differ cannot gate honestly.** `/api/tools/loop` calls a
+model, so its output is non-deterministic and a strict diff would be theatre. It
+is gated on its three validation paths and then compared **structurally** on a
+real round-trip — same surface, offered tools, turn count and kinds, statuses,
+verdicts, tool called, local result. Both sides matched. Cost about 1.3 cents,
+including the ~1,734 injected MCP tokens per call that F-4 describes.
+
+**A false alarm worth recording.** A mid-run gate showed 6 differences that were
+not code: the Python engine had been restarted to load `tools/loop` while Node
+kept its accumulated history, so the run-list cases were comparing different
+stores. Comparing stateful endpoints requires both backends to start from the
+same state — now written into `engine/README.md`, because the failure looks
+exactly like a real regression.
 
 The §6.3 probe-boundary test belongs with the Node JS-SDK probe, which is Phase
 8 — it does not exist yet. Its property is asserted today in the form that does
@@ -701,6 +721,7 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **4b** | **Phase 4b complete.** Seven endpoints — models, preflight, mcp/browse, mcp/test, mcp/call, mcp/aggregate, tools/loop. `lab diff` **25 same, 0 differ**. `/api/compare` excluded by D-6, not deferred: it drives the real vendor npm SDKs. `tools/loop` gated on validation paths and compared structurally on a live round-trip, since a strict diff of model output would be theatre. Ported the two corrections the TypeScript carries as comments — `summarise_turn` must be told its surface, and `check_tool_calls` must NOT flag a missing `index`. **16 of 27 endpoints.** | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **4a** | **Phase 4a complete.** `transport`, `Exchange`, deep `redact`, `classify`, `signal`, `surfaces`, and `/api/exchange`. `lab diff` **15 same, 0 differ** including a real free gateway call. Phase 4 split first — ~1,900 lines of foundation would have meant rushing what everything depends on. Three bugs caught: a case-sensitivity bug in the exposure summary, an invented `mode` value, and a `summarize()` stub returning whole records. The third also exposed a gate gap — the run-list cases ran before the exchanges and so compared empty stores; a post-exchange case now covers it. 78 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **3** | **Phase 3 complete.** Six data-serving endpoints migrated; `lab diff` 9 same, 0 differ; UI verified running on the engine alone. Re-scoped first, which this time fixed a contradiction: three of the seven listed endpoints call the gateway, and transport was deferred to Phase 4 — the phase depended on a component scheduled after it. `engine/cases.py` generated from Node's payloads rather than transcribed. The gate caught a real bug immediately: the engine advertised a `/mock-mcp` URL for a server it does not host. 33 tests. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |
 | 2026-09-07 | **2** | **Phase 2 complete.** FastAPI engine on 8801 serving `/api/health` and `/api/config`; `lab diff` clean on the first run. Scope trimmed again after testing the premise: `transport` and `Exchange` deferred to Phase 4, since neither endpoint touches a gateway. 20 tests including the public-view leak test. Two defects found by hand that the gate missed — a content-type divergence (now matched, and the gate's header-blindness recorded) and one test of mine that assumed U+2026 would survive `json.dumps` defaults. | `tokenshield-compat-tests/engine/*`, `testdata/migration-cases.json`, `docs/CONVERGENCE.md` |

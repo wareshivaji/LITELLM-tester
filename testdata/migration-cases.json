@@ -195,5 +195,195 @@
         "Why": "network timing"
       }
     ]
+  },
+  {
+    "Name": "models: no key -> 400",
+    "Method": "POST",
+    "Path": "/api/models",
+    "Body": {
+      "profileId": "prod-us"
+    }
+  },
+  {
+    "Name": "models: the key's catalogue",
+    "Method": "POST",
+    "Path": "/api/models",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer"
+    },
+    "Volatile": [
+      {
+        "Pattern": "exchangeId",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchangeIds.*",
+        "Why": "same, in the preflight response"
+      }
+    ]
+  },
+  {
+    "Name": "mcp/browse: servers + tools, parsed",
+    "Method": "POST",
+    "Path": "/api/mcp/browse",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer"
+    },
+    "Volatile": [
+      {
+        "Pattern": "exchangeId",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchangeIds.*",
+        "Why": "same, in the preflight response"
+      }
+    ]
+  },
+  {
+    "Name": "mcp/test: no server -> 400",
+    "Method": "POST",
+    "Path": "/api/mcp/test",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer"
+    }
+  },
+  {
+    "Name": "mcp/call: missing name -> 400",
+    "Method": "POST",
+    "Path": "/api/mcp/call",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "server": "HuggingFace"
+    }
+  },
+  {
+    "Name": "mcp/aggregate: JSON-RPC tools/list",
+    "Method": "POST",
+    "Path": "/api/mcp/aggregate",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer"
+    },
+    "Volatile": [
+      {
+        "Pattern": "exchangeId",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchangeIds.*",
+        "Why": "same, in the preflight response"
+      },
+      {
+        "Pattern": "timings.startedAt",
+        "Why": "wall-clock instant"
+      },
+      {
+        "Pattern": "timings.ttfbMs",
+        "Why": "network timing"
+      },
+      {
+        "Pattern": "gateway.requestId",
+        "Why": "one per request"
+      },
+      {
+        "Pattern": "gateway.mcpSessionId",
+        "Why": "the gateway mints a session per call"
+      },
+      {
+        "Pattern": "response.headers.date",
+        "Why": "response timestamp"
+      },
+      {
+        "Pattern": "response.headers.x-request-id",
+        "Why": "same id, in the header"
+      },
+      {
+        "Pattern": "response.headers.mcp-session-id",
+        "Why": "same session, in the header"
+      }
+    ]
+  },
+  {
+    "Name": "preflight: all six checks",
+    "Method": "POST",
+    "Path": "/api/preflight",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer"
+    },
+    "Volatile": [
+      {
+        "Pattern": "exchangeId",
+        "Why": "a fresh uuid per exchange"
+      },
+      {
+        "Pattern": "exchangeIds.*",
+        "Why": "same, in the preflight response"
+      },
+      {
+        "Pattern": "startedAt",
+        "Why": "wall-clock instant"
+      },
+      {
+        "Pattern": "durationMs",
+        "Why": "wall-clock duration"
+      },
+      {
+        "Pattern": "checks.*.latencyMs",
+        "Why": "per-check network timing"
+      },
+      {
+        "Pattern": "checks.*.detail",
+        "Why": "the health check's detail embeds its own latency in ms"
+      },
+      {
+        "Pattern": "metrics",
+        "Why": "the gateway's live counters move between the two calls"
+      }
+    ]
+  },
+  {
+    "Name": "tools/loop: no model -> 400",
+    "Method": "POST",
+    "Path": "/api/tools/loop",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer"
+    }
+  },
+  {
+    "Name": "tools/loop: no recognised tool -> 400",
+    "Method": "POST",
+    "Path": "/api/tools/loop",
+    "Body": {
+      "profileId": "prod-us",
+      "keyAlias": "PROD_TOOL_BLOCKING",
+      "scheme": "bearer",
+      "model": "bedrock-claude-haiku-4.5",
+      "tools": [
+        "not_a_preset"
+      ]
+    }
+  },
+  {
+    "Name": "tools/loop: misnamed target -> 400",
+    "Method": "POST",
+    "Path": "/api/tools/loop",
+    "Body": {
+      "profile": "prod-us",
+      "model": "bedrock-claude-haiku-4.5"
+    }
   }
 ]
