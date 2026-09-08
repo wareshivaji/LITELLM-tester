@@ -1,6 +1,8 @@
 # Convergence — Python probing + TS UI
 
-**Status:** **Phase 0.1 done** (2026-09-07). 0.2 is a user action — key rotation.
+**Status:** **Phase 0.1 done** (2026-09-07). 0.2 is a user action — rotate **3 keys** (D-8).
+0.3 (`git init`) can run before or after 0.2; running it first makes the rotation a
+reviewable diff, and the 0.1 gate re-runs before any commit either way.
 **Decisions:** all closed as of 2026-09-07 (§10).
 **Governs two repos:** `tokenshield-client-sdk` (this one) and
 `tokenshield-compat-tests`.
@@ -417,13 +419,39 @@ Ordered. 0.1 must precede 0.3.
 | Step | Action | Gate |
 |---|---|---|
 | 0.1 | ~~Scrub the 8 real credentials from 12 files~~ Scrub every credential from files that will be committed (BC-1, corrected to 23). Source reads named env slots via a new `_creds.py`; `RUNBOOK.md` keeps a name-only inventory; the `env.*` credential store is gitignored rather than scrubbed, because it is the store. | **restated:** no credential in any file **git would track**. A tree-wide grep returning nothing was the wrong gate — the `env.*` scripts legitimately hold keys and `env.toolgov.sh` says so in its own header; destroying them would break a working setup. | **DONE 2026-09-07** |
-| 0.2 | **User action:** rotate the exposed keys, **both `cg-mk-` management keys first** (they mint others). 15 named in the former `RUNBOOK.md` inventory — GLM Testing, SR Key1/Test2/Key3, Tool Calling Test 0/OpenAI/Anthropic/VertexAI/Azure, Vertex Key, Bedrock Test, Azure Foundry Test, Shivaji local claude code, Shivaji claude code Vertex Key, Colpal test 00 — plus whatever the 18 `TS_KEY*` env slots currently hold. | user confirms |
+| 0.2 | **User action, narrowed to 3 keys** (see D-8 for why the other 20 are an accepted risk): the **2 `cg-mk-` management keys** from `build_management_keys_xlsx.py`, and **`Bedrock Test`** — the `cg-ak-` key its own source comment called a prod key, duplicated as `DEV_KEY` across six modules. **Order matters:** mint replacements *first*, revoke the old management keys *last*, or you lose the minting path. | user confirms the 3 |
 | 0.3 | `git init` + first commit. *(`.gitignore` moved into 0.1 — the 0.1 gate depends on it, since "no credential in a tracked file" is only true once the credential store is excluded.)* | history contains no credential |
 | 0.4 | Merge the two findings ledgers into `FINDINGS.md`; dedupe against Python landmines; mark every entry with its source repo | one ledger, no contradictions |
 | 0.5 | Write §7 conventions into both repos as code comments, not just here | both sides agree on baseURL and credential rules |
 
 **Deliverable a person can see:** one findings list, and a version-controlled
 Python repo with no secrets in it.
+
+#### Exposure assessment (measured 2026-09-07, after 0.1)
+
+Written down because the first framing of 0.2 — "rotate all of them" — was not
+proportionate, and the reasoning for narrowing it should outlive the decision.
+
+| Question | Answer |
+|---|---|
+| Cloud-synced? | **No.** OneDrive exists at `C:\Users\shiva\OneDrive`; the repo is a sibling of it, not inside it. Nothing left the machine. |
+| Ever committed or pushed? | **No.** There was no git, which is BC-2 — and the reason BC-2 was rated critical. |
+| Who could read the plaintext? | the machine's own user, anything running as them in that directory, and local backups if any exist |
+| What was the real risk? | **prospective, not realised**: one `git init && git push` from publishing 23 working keys. Phase 0.1 closed exactly that. |
+
+So the exposure was local disk on a single-user, unsynced machine. That justifies
+rotating the keys whose blast radius is large, and not the scoped test keys.
+
+#### How rotation works on this gateway
+
+Creation is in the Management API; revocation is not, and is control-plane only.
+Both facts come from the compat suite's own docs and test plans.
+
+| Action | Mechanism | Source |
+|---|---|---|
+| Mint an API key | `POST {base}/api/v1/management/api-keys` with `x-management-key` | `MANAGEMENT_API_SPEC.md` §4 |
+| Revoke an API key | admin console: ban icon → type `REVOKE` → confirm | test case A9, `build_test_plan_xlsx.py` |
+| Revoke a management key | GraphQL `revokeAiGatewayManagementKey(managementKeyId:)`, org-guarded | test case B5, same file |
 
 ### Phase 1 — Cases as data
 
@@ -532,6 +560,7 @@ rules out.
 | D-4 | baseURL excludes `/v1`; profiles name a gateway, not a surface | **accepted** 2026-09-07, §7.1 |
 | D-5 | Mongo is read/seed only; the lab persists nothing of its own | **accepted** 2026-09-07, §7.6 |
 | D-6 | Node retains the JS vendor SDK probe permanently — it is coverage, not duplication, because customers use both the JS and Python SDKs | **accepted** 2026-09-07, §4 |
+| D-8 | **Rotate 3 of the 23 exposed keys; accept the risk on the other 20.** The 2 management keys mint others, so their blast radius is the whole org; `Bedrock Test` was called a prod key by its own source comment and was the most widely duplicated. The remaining 20 are scoped test keys on $1–2/month budgets, several deliberately restricted for the governance matrix, and the exposure was local disk on an unsynced single-user machine that was never pushed. Rules out treating 0.2 as a 23-key task that would block Phase 0 for little gain. **Reverses my own earlier statement that rotation was "the only way to close" the exposure** — true in principle, not proportionate here. | **accepted** 2026-09-07 |
 | D-7 | **The probe becomes a thin CLI rather than keeping the TS stack.** Tracing `adapters.ts` showed it pulls in 1,439 lines (transport, classify, redact, signal, sse, types) that Python would also own. This reverses the lean toward "accept the duplication, police it with a golden corpus" — that is the Go mistake restated, and 1,400 lines of it were deleted the same day (AD-32). The probe now does HTTP plus a ~20-line auth-header mask; Python owns verdicts and deep redaction. §6.3 | **accepted** 2026-09-07 |
 
 ## 11. Change log
@@ -541,5 +570,6 @@ Appended as phases execute. Empty until Phase 0 begins.
 | Date | Phase | Change | Files |
 |---|---|---|---|
 | 2026-09-07 | — | This plan written. Background check completed against both repos; BC-1..BC-8 recorded. No code changed. | `docs/CONVERGENCE.md` (new) |
+| 2026-09-07 | **0.2** | Scope narrowed from 23 keys to 3 (**D-8**) after measuring the exposure rather than assuming it: the repo is not inside OneDrive and was never committed, so nothing left the machine and the risk was prospective — which Phase 0.1 already closed. Recorded the exposure assessment and the mint/revoke mechanics (Management API creates; the console and a GraphQL mutation revoke) so the reasoning survives the decision. Still a user action; not done. | `docs/CONVERGENCE.md` |
 | 2026-09-07 | **0.1** | **Credential scrub complete; gate passed.** Backed the un-versioned repo up first. New `_creds.py` resolves by named env slot and fails loudly with no built-in default — replacing one production key that was duplicated as `DEV_KEY` across 6 modules, three of them under a comment reading *"do not commit"*. `build_management_keys_xlsx.py`: 4 keys (2 management) became stable labels so the report keeps its meaning. 5 result `.txt` files masked. `RUNBOOK.md`: 15 key values replaced by a name-only inventory. `.gitignore` added covering the `env.*` credential store, generated `.xlsx`, and run artefacts. **BC-1 corrected 8 → 23** and the 0.1 gate restated. Verified: 40 files compile, 167 tests collect, a missing credential exits with guidance naming the variable, and no credential remains in any of the 58 files git would track. | `tokenshield-compat-tests/*` (10 files), `docs/CONVERGENCE.md` |
 | 2026-09-07 | — | D-2 and D-3 resolved; D-4/5/6 confirmed; **D-7 added** after tracing the probe's real dependency closure. §5 ownership corrected, §6.1 credential LLD replaced with the alias-slot rule, §6.3 probe-boundary LLD added, §7 rows resolved, Phase 2.1 and 8.2 gates tightened, estimate revised 8–13 → 7–11 sessions. Still no code changed. | `docs/CONVERGENCE.md` |
