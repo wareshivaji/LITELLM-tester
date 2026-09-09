@@ -10,8 +10,17 @@ caught by the gate at the moment it came due, and in Phase 7 two of three steps
 dissolved on inspection.
 **Complete.** All nine phases done, 2026-09-08. See §8.3 for the final state.
 **Decisions:** all closed as of 2026-09-07 (§10).
-**Governs two repos:** `tokenshield-client-sdk` (this one) and
-`tokenshield-compat-tests`.
+**Governs three repos** as of 2026-09-09: `tokenshield-client-sdk` (this one,
+the UI + client package + Node probe), `tokenshield-lab-engine` (the FastAPI
+backend), and `tokenshield-compat-tests` (the pytest suite).
+
+**The engine moved out of the test repo on 2026-09-09.** Everything below was
+written when there were two repos and the engine lived in
+`tokenshield-compat-tests/engine/`, so every `tokenshield-compat-tests/engine/*`
+path in the change log and the diagrams is where that file was AT THE TIME.
+Those entries are dated records and are left as written; the engine is now
+`tokenshield-lab-engine/engine/*`. Putting a backend inside a repo named for a
+test suite was my call and it was the wrong one - see §10.
 **Maintained during execution.** Every phase updates §10 Decision log and §11
 Change log. A phase is not done until this file reflects it.
 

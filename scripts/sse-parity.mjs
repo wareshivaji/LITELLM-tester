@@ -35,7 +35,7 @@ try {
     'python',
     ['-c', `
 import json, sys
-sys.path.insert(0, r"../tokenshield-compat-tests")
+sys.path.insert(0, r"../tokenshield-lab-engine")
 from engine.sse import SSEParser
 reads = [bytes(r) for r in json.load(open(r"testdata/sse/fixture.json", encoding="utf-8"))]
 p = SSEParser(); frames = []

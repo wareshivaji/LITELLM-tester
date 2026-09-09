@@ -36,7 +36,7 @@ try {
     'python',
     ['-c', `
 import json, sys
-sys.path.insert(0, r"../tokenshield-compat-tests")
+sys.path.insert(0, r"../tokenshield-lab-engine")
 from engine.scenario_bodies import SCENARIO_BODIES, resolve_body
 print(json.dumps({
     sid: resolve_body(sc["body"], "${CTX.model}", "${CTX.embedModel}")

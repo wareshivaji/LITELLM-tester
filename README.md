@@ -22,7 +22,7 @@ Two processes, in two repos that sit side by side.
 
 ```bash
 git clone <this repo>            # tokenshield-client-sdk
-git clone <the engine repo>      # tokenshield-compat-tests
+git clone <the engine repo>      # tokenshield-lab-engine
 ```
 
 **1. Credentials.** Copy `.env.local.example` to `.env.local` and fill in at
@@ -79,7 +79,7 @@ response means lives in Python, exactly once.**
 
 | Part | Repo | What it is |
 |---|---|---|
-| **engine** | `tokenshield-compat-tests` | FastAPI on `127.0.0.1:8801`. Holds the credentials, makes the calls, classifies the verdicts, redacts, serves all 31 endpoints, including the lab's own mock MCP server. |
+| **engine** | `tokenshield-lab-engine` | FastAPI on `127.0.0.1:8801`. Holds the credentials, makes the calls, classifies the verdicts, redacts, serves all 31 endpoints, including the lab's own mock MCP server. |
 | **web** | `tokenshield-client-sdk` | React + Vite on `:5173`. Eight pages. Renders exchanges; computes nothing the engine could compute. |
 | **probe** | `tokenshield-client-sdk` | One 182-line Node CLI. Reads a job on stdin, drives the *real* `openai` npm package, writes one JSON record to stdout. Spawned per call by the engine. |
 

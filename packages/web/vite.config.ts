@@ -10,8 +10,9 @@ import { defineConfig } from 'vite';
  * origin and no CORS of its own to think about. The backend port lives in
  * .env.local, so read it from there rather than duplicating the number.
  *
- * Since Phase 8.1b the backend is the PYTHON engine, in the sibling
- * tokenshield-compat-tests repo, started with:
+ * Since Phase 8.1b the backend is the PYTHON engine. It moved to its own repo
+ * on 2026-09-09 - it had been living inside the compat-TEST repo, which is not
+ * where a backend belongs. Sibling tokenshield-lab-engine, started with:
  *
  *     python -m uvicorn engine.app:app --host 127.0.0.1 --port 8801
  *
