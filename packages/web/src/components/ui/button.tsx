@@ -28,9 +28,10 @@ const buttonVariants = cva(
         outline: 'border border-input bg-transparent hover:bg-secondary/60 hover:text-foreground',
         ghost: 'hover:bg-secondary/60 hover:text-foreground',
         destructive: 'bg-destructive text-white hover:bg-destructive/90',
-        // Costs money. Amber is what this app has always used to say so.
-        spend:
-          'bg-warn text-warn-foreground ring-1 ring-inset ring-warn-foreground/30 hover:bg-warn/70',
+        // Caution. Two things in this app warrant it and both are amber
+        // already: an action that spends real money against the $2/month test
+        // key, and a probe that deliberately exercises a known defect.
+        warn: 'bg-warn text-warn-foreground ring-1 ring-inset ring-warn-foreground/30 hover:bg-warn/70',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {

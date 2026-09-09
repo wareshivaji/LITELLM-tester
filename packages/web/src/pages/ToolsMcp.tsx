@@ -15,6 +15,7 @@ import {
   Field,
   Input,
   Json,
+  Label,
   Select,
   SelectContent,
   SelectGroup,
@@ -24,6 +25,15 @@ import {
   SelectTrigger,
   SelectValue,
   StatusPill,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  ToggleGroup,
+  ToggleGroupItem,
   VerdictPill,
 } from '../components/ui';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
@@ -84,10 +94,6 @@ function ToolLoopCard({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ToolLoopResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  function toggle(id: string): void {
-    setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  }
 
   function run(): void {
     setBusy(true);
@@ -170,24 +176,17 @@ function ToolLoopCard({
       </div>
 
       <div className="mt-3">
-        <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">
-          Surface
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(['chat.completions', 'responses'] as const).map((sid) => (
-            <button
-              key={sid}
-              type="button"
-              onClick={() => setSurfaceId(sid)}
-              className={`mono rounded-md border px-2.5 py-1 text-xs ${
-                surfaceId === sid
-                  ? 'border-sky-600 bg-sky-950/40 text-sky-200'
-                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
-              }`}
-            >
-              {sid === 'responses' ? '/v1/responses' : '/v1/chat/completions'}
-            </button>
-          ))}
+        <Label className="mb-1.5">Surface</Label>
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs value={surfaceId} onValueChange={(v) => setSurfaceId(v as typeof surfaceId)}>
+            <TabsList aria-label="Surface">
+              {(['chat.completions', 'responses'] as const).map((sid) => (
+                <TabsTrigger key={sid} value={sid} className="mono text-xs">
+                  {sid === 'responses' ? '/v1/responses' : '/v1/chat/completions'}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
           <label
             htmlFor="wrong-shape"
             className="ml-2 flex items-center gap-1.5 text-[11px] text-muted-foreground"
@@ -210,26 +209,23 @@ function ToolLoopCard({
       </div>
 
       <div className="mt-3">
-        <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">
-          Tools offered
-        </div>
-        <div className="flex flex-wrap gap-1.5">
+        <Label className="mb-1.5">Tools offered</Label>
+        {/* A ToggleGroup rather than Tabs: several tools can be offered in one
+            request, which is the whole point of the mixed-turn case. Tabs would
+            silently reduce that to the last one clicked. `onValueChange` hands
+            back the FULL next selection, so it replaces rather than toggles. */}
+        <ToggleGroup
+          type="multiple"
+          value={selected}
+          onValueChange={setSelected}
+          aria-label="Tools offered"
+        >
           {TOOL_PRESETS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              title={t.why}
-              onClick={() => toggle(t.id)}
-              className={`mono rounded-md border px-2.5 py-1 text-xs ${
-                selected.includes(t.id)
-                  ? 'border-sky-600 bg-sky-950/40 text-sky-200'
-                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
-              }`}
-            >
+            <ToggleGroupItem key={t.id} value={t.id} title={t.why}>
               {t.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
       </div>
 
       <div className="mt-4 flex items-center gap-3">
@@ -340,11 +336,15 @@ function TurnRow({ turn }: { turn: ToolTurn }) {
   }
 
   return (
-    <div className="rounded-md border border-zinc-800">
-      <button
+    <div className="rounded-md border border-border">
+      {/* A disclosure, so it carries `aria-expanded` — it previously announced
+          nothing about whether the turn was open. */}
+      <Button
         type="button"
+        variant="ghost"
         onClick={toggle}
-        className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left text-xs hover:bg-zinc-900/50"
+        aria-expanded={open}
+        className="h-auto w-full flex-wrap justify-start gap-3 px-3 py-2 text-left text-xs font-normal"
       >
         <span className="mono text-zinc-600">turn {turn.index}</span>
         <span className="text-zinc-400">
@@ -359,7 +359,7 @@ function TurnRow({ turn }: { turn: ToolTurn }) {
           {turn.toolCalls.length} call{turn.toolCalls.length === 1 ? '' : 's'}
         </span>
         <span className="mono ml-auto text-zinc-600">{turn.totalMs} ms</span>
-      </button>
+      </Button>
 
       {turn.toolCalls.length > 0 && (
         <div className="border-t border-zinc-800/60 px-3 py-2">
@@ -493,21 +493,21 @@ function McpCard({
                     </Button>
                   </div>
                   {server.tools.length > 0 && (
-                    <table className="w-full text-left text-[11px]">
-                      <tbody>
+                    <Table className="text-[11px]">
+                      <TableBody>
                         {server.tools.map((t) => (
-                          <tr key={t.name} className="border-t border-zinc-800/60">
-                            <td className="mono px-3 py-1 text-zinc-300">{t.name}</td>
-                            <td className="px-3 py-1">
+                          <TableRow key={t.name} className="border-border">
+                            <TableCell className="mono text-foreground/80">{t.name}</TableCell>
+                            <TableCell>
                               <PolicyPill policy={t.policy} />
-                            </td>
-                            <td className="px-3 py-1 text-zinc-600">
+                            </TableCell>
+                            <TableCell className="text-muted-foreground/70">
                               {(t.description ?? '').slice(0, 80)}
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   )}
                 </div>
               ))}

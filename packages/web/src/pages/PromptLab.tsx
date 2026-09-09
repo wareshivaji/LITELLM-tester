@@ -251,14 +251,15 @@ export function PromptLab(props: PromptLabProps) {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
+          <Button
             type="button"
-            className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-500"
+            variant="outline"
+            size="sm"
             onClick={() => void preview()}
             disabled={running || estimate.calls === 0}
           >
             Preview requests
-          </button>
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -268,13 +269,15 @@ export function PromptLab(props: PromptLabProps) {
             {running ? 'Running…' : 'Run prompts'}
           </Button>
           {running && (
-            <button
+            <Button
               type="button"
-              className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300"
+              variant="outline"
+              size="sm"
               onClick={stop}
+              className="border-destructive/50 text-destructive-foreground hover:bg-destructive/15"
             >
               Stop
-            </button>
+            </Button>
           )}
           <span className="text-[11px] text-amber-400">
             real tokens, real spend — {estimate.calls} calls, ≤{estimate.tokens} output tokens

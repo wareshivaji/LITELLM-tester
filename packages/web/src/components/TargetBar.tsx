@@ -1,4 +1,8 @@
+import { ChevronDownIcon } from 'lucide-react';
+
 import type { AuthScheme, LabKeyRef, LabProfile } from '@tokenshield/client';
+
+import { cn } from '../lib/utils';
 
 import {
   Button,
@@ -8,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
   Separator,
+  Toggle,
 } from './ui';
 
 /** "no key selected" — Radix reserves '' to mean "nothing selected". */
@@ -117,21 +122,26 @@ export function TargetBar({
         </span>
       )}
 
-      <button
-        type="button"
-        onClick={onToggleLog}
-        className={`ml-auto flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs ${
-          logOpen
-            ? 'border-sky-700 bg-sky-950/40 text-sky-200'
-            : 'border-zinc-700 text-zinc-300 hover:border-zinc-600'
-        }`}
+      {/* A Toggle, not a Button: the log panel is open or shut and this control
+          reflects which. It previously said so in colour and a glyph only, so a
+          screen reader announced "Exchange log, button" either way. Radix
+          supplies `aria-pressed`; the chevron stays as the sighted
+          affordance. */}
+      <Toggle
+        pressed={logOpen}
+        onPressedChange={onToggleLog}
+        aria-label="Exchange log"
+        className="ml-auto font-sans"
       >
         Exchange log
-        <span className="mono rounded bg-zinc-800 px-1.5 text-[10px] text-zinc-300">
+        <span className="mono rounded bg-secondary px-1.5 text-[10px] text-foreground/80">
           {logCount}
         </span>
-        <span className="text-zinc-600">{logOpen ? '▾' : '▴'}</span>
-      </button>
+        <ChevronDownIcon
+          className={cn('size-3.5 transition-transform', logOpen && 'rotate-180')}
+          aria-hidden
+        />
+      </Toggle>
     </header>
   );
 }

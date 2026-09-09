@@ -79,7 +79,10 @@ export function Connect(props: ConnectProps) {
         }
         right={
           result !== null ? (
-            <StatusPill status={result.ok ? 'pass' : 'fail'} label={result.ok ? 'ready' : 'blocked'} />
+            <StatusPill
+              status={result.ok ? 'pass' : 'fail'}
+              label={result.ok ? 'ready' : 'blocked'}
+            />
           ) : undefined
         }
       >
@@ -155,16 +158,22 @@ export function Connect(props: ConnectProps) {
             {mcp.usable} usable
             {mcp.totals.block > 0 && <> · {mcp.totals.block} blocked</>}
             {mcp.totals.ask > 0 && (
-              <> · {mcp.totals.ask} marked <code className="mono">ask</code></>
-            )}
-            {' '}across {mcp.servers.length} server{mcp.servers.length === 1 ? '' : 's'}. A blocked
-            tool is <strong>withheld from the model entirely</strong> rather than refused, so this
-            list — not the model&rsquo;s answer — is what proves a policy is in force.
+              <>
+                {' '}
+                · {mcp.totals.ask} marked <code className="mono">ask</code>
+              </>
+            )}{' '}
+            across {mcp.servers.length} server{mcp.servers.length === 1 ? '' : 's'}. A blocked tool
+            is <strong>withheld from the model entirely</strong> rather than refused, so this list —
+            not the model&rsquo;s answer — is what proves a policy is in force.
           </p>
 
           <div className="space-y-3">
             {mcp.servers.map((server) => (
-              <div key={server.id ?? server.name} className="rounded border border-zinc-800 bg-zinc-900/40 p-3">
+              <div
+                key={server.id ?? server.name}
+                className="rounded border border-zinc-800 bg-zinc-900/40 p-3"
+              >
                 <div className="flex flex-wrap items-baseline gap-2">
                   <span className="text-xs font-medium text-zinc-200">{server.name}</span>
                   {server.id !== undefined && (
@@ -217,8 +226,8 @@ export function Connect(props: ConnectProps) {
             <code className="mono">mcp_call</code> all report the upstream name. It does reach
             clients on the tool-call path though — a mixed turn returned{' '}
             <code className="mono">huggingface__hub_repo_search</code> in{' '}
-            <code className="mono">tool_calls</code>, which is FINDINGS.md #9. Use it to
-            force a call to a blocked tool and see whether the refusal is{' '}
+            <code className="mono">tool_calls</code>, which is FINDINGS.md #9. Use it to force a
+            call to a blocked tool and see whether the refusal is{' '}
             <code className="mono">policy_block</code> rather than{' '}
             <code className="mono">unknown_tool</code>.
           </p>

@@ -121,16 +121,18 @@ export function TargetPicker({
         <section>
           <div className="mb-2 flex items-baseline justify-between">
             <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">Gateways</h3>
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="xs"
               onClick={() => {
                 setAddingProfile(!addingProfile);
                 setProfileError(null);
               }}
-              className="text-[11px] text-sky-400 hover:text-sky-300"
+              className="text-[11px]"
             >
               {addingProfile ? 'cancel' : '+ add gateway'}
-            </button>
+            </Button>
           </div>
 
           {addingProfile && (
@@ -150,14 +152,16 @@ export function TargetPicker({
                   if (e.key === 'Enter') void submitProfile();
                 }}
               />
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 disabled={busy || profileUrl.trim().length === 0}
                 onClick={() => void submitProfile()}
-                className="w-full rounded-md border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-900/40 disabled:opacity-40"
+                className="w-full border-primary/50 text-primary hover:bg-primary/15"
               >
                 Add gateway
-              </button>
+              </Button>
             </div>
           )}
 
@@ -171,10 +175,13 @@ export function TargetPicker({
                     : 'border-zinc-800 bg-zinc-950/40'
                 }`}
               >
+                {/* A bare click REGION filling the row, not a control with
+                    chrome — Button's height and padding would break the row.
+                    The global *:focus-visible rule gives it a ring. */}
                 <button
                   type="button"
                   onClick={() => onProfile(p.id)}
-                  className="min-w-0 flex-1 text-left"
+                  className="min-w-0 flex-1 rounded text-left"
                 >
                   <span className="text-zinc-200">{p.label}</span>
                   <span className="mono ml-2 truncate text-[10px] text-zinc-600">{p.baseUrl}</span>
@@ -184,13 +191,15 @@ export function TargetPicker({
                     <span className="rounded bg-amber-500/10 px-1 text-[10px] text-amber-300">
                       session
                     </span>
-                    <button
+                    <Button
                       type="button"
+                      variant="link"
+                      size="xs"
                       onClick={() => void remove('profile', p.id)}
-                      className="text-[10px] text-rose-400/70 hover:text-rose-300"
+                      className="text-[10px] text-destructive-foreground/70 hover:text-destructive-foreground"
                     >
                       remove
-                    </button>
+                    </Button>
                   </>
                 ) : (
                   <span className="text-[10px] text-zinc-700">.env.local</span>
@@ -207,17 +216,19 @@ export function TargetPicker({
             <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
               Credentials
             </h3>
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="xs"
               onClick={() => {
                 setAddingKey(!addingKey);
                 setKeyError(null);
                 setKeySecret('');
               }}
-              className="text-[11px] text-sky-400 hover:text-sky-300"
+              className="text-[11px]"
             >
               {addingKey ? 'cancel' : '+ add key'}
-            </button>
+            </Button>
           </div>
 
           {addingKey && (
@@ -250,16 +261,18 @@ export function TargetPicker({
                   <SelectItem value="admin">admin key</SelectItem>
                 </SelectContent>
               </Select>
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 disabled={
                   busy || keySecret.trim().length === 0 || keyAliasInput.trim().length === 0
                 }
                 onClick={() => void submitKey()}
-                className="w-full rounded-md border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-900/40 disabled:opacity-40"
+                className="w-full border-primary/50 text-primary hover:bg-primary/15"
               >
                 Add key
-              </button>
+              </Button>
               <p className="text-[11px] leading-relaxed text-zinc-600">
                 Held in the backend&rsquo;s memory only — never written to .env.local, never sent
                 back to this page, gone when the server restarts.
@@ -277,11 +290,12 @@ export function TargetPicker({
                     : 'border-zinc-800 bg-zinc-950/40'
                 }`}
               >
+                {/* Bare row region — see the note on the gateway list. */}
                 <button
                   type="button"
                   disabled={k.kind !== 'api'}
                   onClick={() => onKey(k.alias)}
-                  className="min-w-0 flex-1 text-left disabled:cursor-default"
+                  className="min-w-0 flex-1 rounded text-left disabled:cursor-default"
                 >
                   <span className="text-zinc-200">{k.alias}</span>
                   <span className="mono ml-2 text-[10px] text-zinc-600">{k.masked}</span>
@@ -296,13 +310,15 @@ export function TargetPicker({
                     <span className="rounded bg-amber-500/10 px-1 text-[10px] text-amber-300">
                       session
                     </span>
-                    <button
+                    <Button
                       type="button"
+                      variant="link"
+                      size="xs"
                       onClick={() => void remove('key', k.alias)}
-                      className="text-[10px] text-rose-400/70 hover:text-rose-300"
+                      className="text-[10px] text-destructive-foreground/70 hover:text-destructive-foreground"
                     >
                       remove
-                    </button>
+                    </Button>
                   </>
                 ) : (
                   <span className="text-[10px] text-zinc-700">.env.local</span>

@@ -22,6 +22,15 @@ import {
   SelectTrigger,
   SelectValue,
   StatusPill,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from '../components/ui';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
 import type { CheckStatusLike } from '../components/ui';
@@ -196,23 +205,16 @@ export function Scenarios(props: ScenariosProps) {
           ) : undefined
         }
       >
-        <div className="flex flex-wrap gap-1.5">
-          {suites.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setSuiteId(s.id)}
-              className={`rounded-md border px-2.5 py-1 text-xs ${
-                s.id === suiteId
-                  ? 'border-sky-600 bg-sky-950/40 text-sky-200'
-                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
-              }`}
-            >
-              {s.title}
-              <span className="ml-1.5 text-zinc-600">{s.scenarios.length}</span>
-            </button>
-          ))}
-        </div>
+        <Tabs value={suiteId} onValueChange={setSuiteId}>
+          <TabsList aria-label="Scenario suite">
+            {suites.map((s) => (
+              <TabsTrigger key={s.id} value={s.id} className="text-xs">
+                {s.title}
+                <span className="text-muted-foreground">{s.scenarios.length}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Labelled label="Model">
@@ -323,13 +325,15 @@ export function Scenarios(props: ScenariosProps) {
             {running ? `Running… ${live.length}/${total}` : 'Run suite'}
           </Button>
           {running && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => abortRef.current?.abort()}
-              className="rounded-md border border-rose-800 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/30"
+              className="border-destructive/50 text-destructive-foreground hover:bg-destructive/15"
             >
               Stop
-            </button>
+            </Button>
           )}
           <span className="text-xs text-zinc-600">sequential, so a paced key is not overrun</span>
         </div>
@@ -438,29 +442,31 @@ function ResultTable({ rows }: { rows: ScenarioResult[] }) {
   return (
     <Card title="Results" subtitle={multiTarget ? 'Two targets — compare the rows' : undefined}>
       <div className="overflow-hidden rounded-md border border-zinc-800">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-zinc-900/80 text-[10px] uppercase tracking-wider text-zinc-500">
-            <tr>
-              {multiTarget && <th className="px-3 py-2 font-medium">Target</th>}
-              <th className="px-3 py-2 font-medium">Scenario</th>
-              <th className="px-3 py-2 font-medium">Outcome</th>
-              <th className="px-3 py-2 font-medium">HTTP</th>
-              <th className="px-3 py-2 font-medium">Verdict</th>
-              <th className="px-3 py-2 font-medium">Notes</th>
-              <th className="px-3 py-2 text-right font-medium">ms</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="text-xs">
+          <TableHeader className="bg-muted/50 text-[10px] text-muted-foreground">
+            <TableRow>
+              {multiTarget && <TableHead>Target</TableHead>}
+              <TableHead>Scenario</TableHead>
+              <TableHead>Outcome</TableHead>
+              <TableHead>HTTP</TableHead>
+              <TableHead>Verdict</TableHead>
+              <TableHead>Notes</TableHead>
+              <TableHead className="text-right">ms</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => {
               const key = `${row.targetLabel}:${row.scenarioId}`;
               return (
                 <Fragment key={key}>
-                  <tr
+                  <TableRow
                     onClick={() => toggle(row)}
-                    className="cursor-pointer border-t border-zinc-800/60 hover:bg-zinc-900/60"
+                    className="cursor-pointer border-border hover:bg-zinc-900/60"
                   >
-                    {multiTarget && <td className="px-3 py-2 text-zinc-400">{row.targetLabel}</td>}
-                    <td className="px-3 py-2 text-zinc-200">
+                    {multiTarget && (
+                      <TableCell className="text-muted-foreground">{row.targetLabel}</TableCell>
+                    )}
+                    <TableCell className="text-foreground">
                       {row.title}
                       {row.landmine !== undefined && (
                         <span className="mono ml-1.5 rounded bg-amber-500/10 px-1 text-[10px] text-amber-300">
@@ -489,34 +495,38 @@ function ResultTable({ rows }: { rows: ScenarioResult[] }) {
                           {row.notImplemented.slice(0, 110)}
                         </span>
                       )}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <StatusPill
                         status={OUTCOME_TONE[row.outcome]}
                         label={OUTCOME_LABEL[row.outcome]}
                       />
-                    </td>
-                    <td className="mono px-3 py-2 text-zinc-300">{row.status ?? '—'}</td>
-                    <td className="mono px-3 py-2 text-zinc-400">{row.verdict}</td>
-                    <td className="px-3 py-2 text-zinc-500">{row.failures.join('; ')}</td>
-                    <td className="mono px-3 py-2 text-right text-zinc-500">{row.totalMs}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="mono text-foreground/80">{row.status ?? '—'}</TableCell>
+                    <TableCell className="mono text-muted-foreground">{row.verdict}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.failures.join('; ')}
+                    </TableCell>
+                    <TableCell className="mono text-right text-muted-foreground">
+                      {row.totalMs}
+                    </TableCell>
+                  </TableRow>
                   {openId === key && (
-                    <tr>
-                      <td colSpan={multiTarget ? 7 : 6} className="p-0">
+                    <TableRow>
+                      <TableCell colSpan={multiTarget ? 7 : 6} className="p-0">
                         {detail === null ? (
                           <div className="p-4 text-xs text-zinc-500">Loading…</div>
                         ) : (
                           <ExchangeDetail exchange={detail} />
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
                 </Fragment>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </Card>
   );

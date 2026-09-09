@@ -4,7 +4,19 @@ import type { Exchange, ExchangeSummary } from '@tokenshield/client';
 
 import { api } from '../api';
 import { ExchangeDetail } from './ExchangeDetail';
-import { Button, Card, Empty, VerdictLegend, VerdictPill } from './ui';
+import {
+  Button,
+  Card,
+  Empty,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  VerdictLegend,
+  VerdictPill,
+} from './ui';
 
 export function ExchangeLog({
   runs,
@@ -54,47 +66,52 @@ export function ExchangeLog({
         <Empty>No calls yet. Anything this lab sends lands here.</Empty>
       ) : (
         <div className="overflow-hidden rounded-md border border-zinc-800">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-zinc-900/80 text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-medium">Time</th>
-                <th className="px-3 py-2 font-medium">Surface</th>
-                <th className="px-3 py-2 font-medium">Request</th>
-                <th className="px-3 py-2 font-medium">Target</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Verdict</th>
-                <th className="px-3 py-2 text-right font-medium">ms</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="text-xs">
+            <TableHeader className="bg-muted/50 text-[10px] text-muted-foreground">
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>Surface</TableHead>
+                <TableHead>Request</TableHead>
+                <TableHead>Target</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Verdict</TableHead>
+                <TableHead className="text-right">ms</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {runs.map((run) => (
                 <Fragment key={run.id}>
-                  <tr
+                  {/* `data-state="selected"` is the hook TableRow already styles, so
+                      the open row no longer carries a colour of its own. */}
+                  <TableRow
                     onClick={() => void toggle(run.id)}
-                    className={`cursor-pointer border-t border-zinc-800/60 hover:bg-zinc-900/60 ${
-                      openId === run.id ? 'bg-zinc-900/80' : ''
-                    }`}
+                    data-state={openId === run.id ? 'selected' : undefined}
+                    className="cursor-pointer"
                   >
-                    <td className="mono px-3 py-2 text-zinc-500">{run.startedAt.slice(11, 23)}</td>
-                    <td className="px-3 py-2 text-zinc-300">{run.surface}</td>
-                    <td className="mono px-3 py-2 text-zinc-400">
+                    <TableCell className="mono text-muted-foreground">
+                      {run.startedAt.slice(11, 23)}
+                    </TableCell>
+                    <TableCell className="text-foreground/80">{run.surface}</TableCell>
+                    <TableCell className="mono text-muted-foreground">
                       {run.method} {run.path}
-                    </td>
-                    <td className="px-3 py-2 text-zinc-500">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {run.profileLabel}
                       {run.keyAlias !== null && (
                         <span className="mono ml-1 text-zinc-600">· {run.keyAlias}</span>
                       )}
-                    </td>
-                    <td className="mono px-3 py-2 text-zinc-300">{run.status ?? '—'}</td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell className="mono text-foreground/80">{run.status ?? '—'}</TableCell>
+                    <TableCell>
                       <VerdictPill kind={run.verdictKind} />
-                    </td>
-                    <td className="mono px-3 py-2 text-right text-zinc-400">{run.totalMs}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="mono text-right text-muted-foreground">
+                      {run.totalMs}
+                    </TableCell>
+                  </TableRow>
                   {openId === run.id && (
-                    <tr>
-                      <td colSpan={7} className="p-0">
+                    <TableRow>
+                      <TableCell colSpan={7} className="p-0">
                         {error !== null ? (
                           <div className="p-4 text-xs text-rose-400">{error}</div>
                         ) : detail === null ? (
@@ -102,13 +119,13 @@ export function ExchangeLog({
                         ) : (
                           <ExchangeDetail exchange={detail} />
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
                 </Fragment>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </Card>

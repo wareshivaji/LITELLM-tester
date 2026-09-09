@@ -1,4 +1,6 @@
 import { useState } from 'react';
+
+import { cn } from '../lib/utils';
 import type { ReactNode } from 'react';
 
 import { toCurl } from '@tokenshield/client';
@@ -6,7 +8,7 @@ import type { Exchange } from '@tokenshield/client';
 
 import { unknownFieldsIn } from '@tokenshield/client';
 
-import { Button, Json } from './ui';
+import { Button, Json, Table, TableBody, TableCell, TableRow } from './ui';
 
 /**
  * Headers worth pulling to the front. These are exactly the ones a browser
@@ -62,27 +64,30 @@ function HeaderTable({
   if (entries.length === 0) return <p className="text-xs text-zinc-600">none</p>;
   return (
     <div className="mono overflow-hidden rounded-md border border-zinc-800">
-      <table className="w-full text-xs">
-        <tbody>
+      <Table className="text-xs">
+        <TableBody>
           {entries.map(([name, value]) => {
             const isSignal = highlight && SIGNAL_HEADERS.includes(name.toLowerCase());
             return (
-              <tr key={name} className="border-b border-zinc-800/60 last:border-0">
-                <td
-                  className={`w-64 px-3 py-1.5 align-top ${isSignal ? 'text-sky-300' : 'text-zinc-500'}`}
+              <TableRow key={name} className="border-border">
+                <TableCell
+                  className={cn(
+                    'w-64 align-top',
+                    isSignal ? 'text-primary' : 'text-muted-foreground',
+                  )}
                 >
                   {name}
-                </td>
-                <td
-                  className={`px-3 py-1.5 break-all ${isSignal ? 'text-sky-200' : 'text-zinc-300'}`}
+                </TableCell>
+                <TableCell
+                  className={cn('break-all', isSignal ? 'text-primary' : 'text-foreground/80')}
                 >
                   {value}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

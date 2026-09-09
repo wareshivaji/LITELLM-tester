@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 
+import { cn } from '../lib/utils';
+
 import { readOutput, sdkModesFor, SURFACES } from '@tokenshield/client';
 import type { AuthScheme, Exchange, SdkMode, SdkOutcome } from '@tokenshield/client';
 
@@ -18,6 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
   StatusPill,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  ToggleGroup,
+  ToggleGroupItem,
   VerdictPill,
 } from '../components/ui';
 import { useComposer } from '../hooks/useComposer';
@@ -72,12 +82,6 @@ export function SdkCompare(props: SdkCompareProps) {
     });
   }, [available]);
 
-  function toggle(mode: SdkMode): void {
-    setSelected((current) =>
-      current.includes(mode) ? current.filter((m) => m !== mode) : [...current, mode],
-    );
-  }
-
   function run(): void {
     if (!composer.parsed.ok || selected.length === 0) return;
     setRunning(true);
@@ -109,37 +113,41 @@ export function SdkCompare(props: SdkCompareProps) {
           extraControls={
             <div className="space-y-3">
               <div>
-                <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Clients
-                </div>
-                <div className="flex flex-wrap gap-1.5">
+                <Label className="mb-1.5">Clients</Label>
+                {/* Multi-select, and that is the feature: running `raw` and
+                    `openai-sdk` against the SAME request is how the two get
+                    diffed. A single-select control would make the comparison
+                    impossible to express.
+
+                    `unavailable` is a distinct look rather than just "not
+                    selected". A client with no method for the current surface
+                    used to differ from an unselected one only in shade, so
+                    "can't" and "didn't" were the same picture. */}
+                <ToggleGroup
+                  type="multiple"
+                  value={selected}
+                  onValueChange={(v) => setSelected(v as SdkMode[])}
+                  aria-label="Clients"
+                >
                   {(['raw', 'openai-sdk', 'anthropic-sdk'] as const).map((mode) => {
                     const usable = available.includes(mode);
-                    const on = selected.includes(mode);
                     return (
-                      <button
+                      <ToggleGroupItem
                         key={mode}
-                        type="button"
+                        value={mode}
                         disabled={!usable}
-                        onClick={() => toggle(mode)}
+                        unavailable={!usable}
                         title={
                           usable
                             ? MODE_BLURB[mode]
                             : `No method on this SDK for ${composer.surface.label}`
                         }
-                        className={`mono rounded-md border px-2.5 py-1 text-xs ${
-                          !usable
-                            ? 'cursor-not-allowed border-zinc-900 text-zinc-700'
-                            : on
-                              ? 'border-sky-600 bg-sky-950/40 text-sky-200'
-                              : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'
-                        }`}
                       >
                         {MODE_LABEL[mode]}
-                      </button>
+                      </ToggleGroupItem>
                     );
                   })}
-                </div>
+                </ToggleGroup>
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <Label>SDK maxRetries</Label>
@@ -244,48 +252,51 @@ function Divergence({ outcomes }: { outcomes: SdkOutcome[] }) {
         )}
       </div>
       <div className="overflow-hidden rounded-md border border-zinc-800">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-zinc-900/80 text-[10px] uppercase tracking-wider text-zinc-500">
-            <tr>
-              <th className="px-3 py-2 font-medium">Client</th>
-              <th className="px-3 py-2 font-medium">HTTP</th>
-              <th className="px-3 py-2 font-medium">Verdict</th>
-              <th className="px-3 py-2 font-medium">Envelope</th>
-              <th className="px-3 py-2 font-medium">Attempts</th>
-              <th className="px-3 py-2 text-right font-medium">ms</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="text-xs">
+          <TableHeader className="bg-muted/50 text-[10px] text-muted-foreground">
+            <TableRow>
+              <TableHead>Client</TableHead>
+              <TableHead>HTTP</TableHead>
+              <TableHead>Verdict</TableHead>
+              <TableHead>Envelope</TableHead>
+              <TableHead>Attempts</TableHead>
+              <TableHead className="text-right">ms</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((r) => (
               <Fragment key={r.mode}>
-                <tr className="border-t border-zinc-800/60">
-                  <td className="mono px-3 py-2 text-zinc-200">{MODE_LABEL[r.mode]}</td>
-                  <td className="mono px-3 py-2 text-zinc-300">{r.status ?? '—'}</td>
-                  <td className="px-3 py-2">
+                <TableRow className="border-border">
+                  <TableCell className="mono text-foreground">{MODE_LABEL[r.mode]}</TableCell>
+                  <TableCell className="mono text-foreground/80">{r.status ?? '—'}</TableCell>
+                  <TableCell>
                     <VerdictPill kind={r.verdict} />
-                  </td>
-                  <td className="mono px-3 py-2 text-zinc-400">{r.envelope}</td>
-                  <td
-                    className={`mono px-3 py-2 ${r.attempts > 1 ? 'text-amber-300' : 'text-zinc-400'}`}
+                  </TableCell>
+                  <TableCell className="mono text-muted-foreground">{r.envelope}</TableCell>
+                  <TableCell
+                    className={cn(
+                      'mono',
+                      r.attempts > 1 ? 'text-warn-foreground' : 'text-muted-foreground',
+                    )}
                   >
                     {r.attempts}
-                  </td>
-                  <td className="mono px-3 py-2 text-right text-zinc-400">
+                  </TableCell>
+                  <TableCell className="mono text-right text-muted-foreground">
                     {Math.round(r.totalMs)}
-                  </td>
-                </tr>
-                <tr className="border-t border-zinc-900">
-                  <td colSpan={6} className="px-3 pb-2 text-[11px] text-zinc-500">
+                  </TableCell>
+                </TableRow>
+                <TableRow className="border-zinc-900">
+                  <TableCell colSpan={6} className="pb-2 text-[11px] text-muted-foreground">
                     <span className="text-zinc-600">what the client reported: </span>
                     <span className={r.ok ? 'text-zinc-300' : 'text-rose-300'}>
                       {r.reported.slice(0, 220)}
                     </span>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               </Fragment>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
@@ -344,17 +355,19 @@ function OutcomeCard({ outcome }: { outcome: SdkOutcome }) {
           </div>
           <div className="space-y-1">
             {outcome.attempts.map((a, i) => (
-              <button
+              <Button
                 key={a.id}
                 type="button"
+                variant="outline"
                 onClick={() => setOpenAttempt(openAttempt?.id === a.id ? null : a)}
-                className="mono flex w-full items-center gap-2 rounded-md border border-zinc-800 px-2 py-1 text-left text-[11px] text-zinc-400 hover:border-zinc-700"
+                aria-expanded={openAttempt?.id === a.id}
+                className="mono h-auto w-full justify-start gap-2 px-2 py-1 text-left text-[11px] font-normal text-muted-foreground"
               >
                 <span className="text-zinc-600">#{i + 1}</span>
                 <span className="text-zinc-300">{a.response?.status ?? '—'}</span>
                 <span>{a.verdict.kind}</span>
-                <span className="ml-auto text-zinc-600">{a.timings.totalMs} ms</span>
-              </button>
+                <span className="ml-auto text-muted-foreground">{a.timings.totalMs} ms</span>
+              </Button>
             ))}
           </div>
         </div>

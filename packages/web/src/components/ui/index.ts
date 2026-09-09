@@ -42,6 +42,8 @@ export {
 } from './table';
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
 export { Textarea } from './textarea';
+export { Toggle } from './toggle';
+export { ToggleGroup, ToggleGroupItem } from './toggle-group';
 
 // The lab's own — these encode something about gateways and verdicts.
 export type { CheckStatusLike } from './lab';

@@ -16,8 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
   StatusPill,
-  verdictTone,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
   VerdictPill,
+  verdictTone,
 } from '../components/ui';
 
 interface GovernanceProps {
@@ -400,13 +404,13 @@ function ProbeReport({ gate, data }: { gate: Gate; data: ProbeResult }) {
         />
       </div>
       <div className="overflow-hidden rounded-md border border-zinc-800">
-        <table className="w-full text-left text-[11px]">
-          <tbody>
+        <Table className="text-[11px]">
+          <TableBody>
             {data.results.map((r) => (
-              <tr key={r.model} className="border-b border-zinc-800/60 last:border-0">
-                <td className="mono px-2 py-1 text-zinc-300">{r.model}</td>
-                <td className="mono px-2 py-1 text-zinc-500">{r.status ?? '—'}</td>
-                <td className="px-2 py-1">
+              <TableRow key={r.model} className="border-border">
+                <TableCell className="mono text-foreground/80">{r.model}</TableCell>
+                <TableCell className="mono text-muted-foreground">{r.status ?? '—'}</TableCell>
+                <TableCell>
                   <span
                     className={
                       r.verdict === gate.expects
@@ -418,12 +422,12 @@ function ProbeReport({ gate, data }: { gate: Gate; data: ProbeResult }) {
                   >
                     {r.verdict}
                   </span>
-                </td>
-                <td className="px-2 py-1 text-zinc-600">{r.detail.slice(0, 70)}</td>
-              </tr>
+                </TableCell>
+                <TableCell className="text-muted-foreground/70">{r.detail.slice(0, 70)}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       <p className="text-[11px] text-zinc-600">
         404 means the gateway does not route that model at all. {gate.expects} means it does, and

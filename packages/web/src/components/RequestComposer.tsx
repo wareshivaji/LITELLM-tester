@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { gapsMovingTo, probesFor, unknownFieldsIn } from '@tokenshield/client';
 import type { SurfaceSpec } from '@tokenshield/client';
 
+import { cn } from '../lib/utils';
 import type { Composer } from '../hooks/useComposer';
 import {
   Button,
@@ -13,38 +14,29 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Tabs,
+  TabsList,
+  TabsTrigger,
   Textarea,
 } from './ui';
 
-const FAMILY_TONE: Record<string, string> = {
-  openai: 'border-sky-800/60 text-sky-200 bg-sky-950/30',
-  anthropic: 'border-violet-800/60 text-violet-200 bg-violet-950/30',
-  utility: 'border-zinc-700 text-zinc-300 bg-zinc-900/60',
+/**
+ * The active tab's colour, by surface family.
+ *
+ * Kept through the move to Tabs rather than flattened to the primary colour.
+ * In a COMPATIBILITY lab the family is information: an OpenAI-shaped surface,
+ * an Anthropic-shaped one and a utility endpoint answer differently, and which
+ * kind you are pointed at is the first thing you need to know when reading a
+ * result. Losing it would have been a real regression dressed as consistency.
+ */
+const FAMILY_ACTIVE: Record<string, string> = {
+  openai:
+    'data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:ring-primary/40',
+  anthropic:
+    'data-[state=active]:bg-violet-500/15 data-[state=active]:text-violet-300 data-[state=active]:ring-violet-400/40',
+  utility:
+    'data-[state=active]:bg-secondary data-[state=active]:text-foreground data-[state=active]:ring-border',
 };
-
-function SurfaceTab({
-  spec,
-  active,
-  onClick,
-}: {
-  spec: SurfaceSpec;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-md border px-2.5 py-1 text-xs ${
-        active
-          ? FAMILY_TONE[spec.family]
-          : 'border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
-      }`}
-    >
-      {spec.label}
-    </button>
-  );
-}
 
 export function RequestComposer({
   composer,
@@ -88,16 +80,26 @@ export function RequestComposer({
   return (
     <div className="space-y-5">
       <Card title="Surface" subtitle={composer.surface.docs}>
-        <div className="flex flex-wrap gap-1.5">
-          {surfaces.map((s) => (
-            <SurfaceTab
-              key={s.id}
-              spec={s}
-              active={s.id === composer.surface.id}
-              onClick={() => composer.setSurfaceId(s.id)}
-            />
-          ))}
-        </div>
+        {/* Radix Tabs for the keyboard behaviour: arrow keys move between
+            surfaces and the group carries one tab stop, where the old button
+            row needed a Tab press per surface and announced no relationship
+            between them. There is no TabsContent - selecting a surface changes
+            what the composer BUILDS rather than revealing a panel. */}
+        <Tabs value={composer.surface.id} onValueChange={composer.setSurfaceId}>
+          <TabsList aria-label="Surface">
+            {surfaces.map((s) => (
+              <TabsTrigger
+                key={s.id}
+                value={s.id}
+                data-family={s.family}
+                title={s.docs}
+                className={cn('text-xs', FAMILY_ACTIVE[s.family])}
+              >
+                {s.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Model">
@@ -146,21 +148,23 @@ export function RequestComposer({
           subtitle="Each one patches the body below to answer a specific question. ⚠ marks behaviour believed to be wrong today."
         >
           <div className="flex flex-wrap gap-1.5">
+            {/* Buttons, not a toggle group: each one PATCHES the body below
+                and nothing stays pressed. The amber variant marks a probe that
+                exercises behaviour we believe is wrong today - the same amber
+                the ledger uses for a landmine. */}
             {probes.map((probe) => (
-              <button
+              <Button
                 key={probe.id}
                 type="button"
+                variant={probe.landmine ? 'warn' : 'outline'}
+                size="sm"
                 title={`${probe.why} (expected: ${probe.expectation})`}
                 onClick={() => composer.applyProbe(probe)}
                 disabled={!composer.parsed.ok}
-                className={`rounded-md border px-2 py-1 text-[11px] disabled:opacity-40 ${
-                  probe.landmine
-                    ? 'border-amber-800/70 text-amber-300 hover:bg-amber-950/30'
-                    : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800/60'
-                }`}
+                className="h-7 px-2 text-[11px] font-normal"
               >
                 {probe.label}
-              </button>
+              </Button>
             ))}
           </div>
           {composer.lastProbe !== null && (

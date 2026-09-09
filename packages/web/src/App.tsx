@@ -6,7 +6,8 @@ import { api } from './api';
 import type { LabConfigResponse, PreflightResponse } from './api';
 import { ExchangeLog } from './components/ExchangeLog';
 import { TargetBar } from './components/TargetBar';
-import { Notice } from './components/ui';
+import { Button, Notice } from './components/ui';
+import { cn } from './lib/utils';
 import { useModelCatalogue } from './hooks/useModelCatalogue';
 import { Connect } from './pages/Connect';
 import { Governance } from './pages/Governance';
@@ -31,9 +32,7 @@ const NAV: ReadonlyArray<{
 }> = [
   {
     section: 'Set up',
-    items: [
-      { id: 'connect', label: 'Connect', blurb: 'Can I reach this gateway?', spends: false },
-    ],
+    items: [{ id: 'connect', label: 'Connect', blurb: 'Can I reach this gateway?', spends: false }],
   },
   {
     section: 'Send',
@@ -91,9 +90,7 @@ export function App() {
       })
       .catch((err: unknown) => {
         setBootError(
-          err instanceof Error
-            ? `${err.message} — is the lab server running?`
-            : String(err),
+          err instanceof Error ? `${err.message} — is the lab server running?` : String(err),
         );
       });
   }, []);
@@ -188,27 +185,37 @@ export function App() {
               {group.items.map((item) => {
                 const active = item.id === page;
                 return (
-                  <button
+                  <Button
                     key={item.id}
                     type="button"
+                    variant="ghost"
                     onClick={() => setPage(item.id)}
-                    className={`flex w-full flex-col rounded-md px-3 py-1.5 text-left ${
-                      active ? 'bg-zinc-800' : 'hover:bg-zinc-900'
-                    }`}
+                    aria-current={active ? 'page' : undefined}
+                    className={cn(
+                      'h-auto w-full flex-col items-start gap-0 px-3 py-1.5 text-left font-normal',
+                      // `hover:bg-secondary` repeated so hovering the CURRENT page
+                      // does not dim it - ghost's hover is secondary/60, which is
+                      // lighter than the active fill and read as losing selection.
+                      active && 'bg-secondary hover:bg-secondary',
+                    )}
                   >
                     <span className="flex items-center gap-1.5">
-                      <span className={`text-sm ${active ? 'text-zinc-100' : 'text-zinc-400'}`}>
+                      <span
+                        className={cn('text-sm', active ? 'text-foreground' : 'text-foreground/70')}
+                      >
                         {item.label}
                       </span>
                       {item.spends && (
                         <span
-                          className="h-1.5 w-1.5 rounded-full bg-amber-500/70"
+                          className="size-1.5 rounded-full bg-warn-foreground/70"
                           title="This page can reach a provider — real tokens"
                         />
                       )}
                     </span>
-                    <span className="text-[10px] leading-tight text-zinc-600">{item.blurb}</span>
-                  </button>
+                    <span className="text-[10px] leading-tight text-muted-foreground">
+                      {item.blurb}
+                    </span>
+                  </Button>
                 );
               })}
             </div>

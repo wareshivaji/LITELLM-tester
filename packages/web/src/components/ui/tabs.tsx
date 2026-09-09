@@ -39,7 +39,7 @@ function TabsList({
       data-slot="tabs-list"
       data-variant={variant}
       className={cn(
-        'inline-flex w-fit items-center',
+        'inline-flex w-fit flex-wrap items-center',
         variant === 'segmented' && 'gap-1 rounded-md border border-border bg-muted/40 p-1',
         variant === 'underline' && 'gap-4 border-b border-border',
         className,
@@ -54,11 +54,9 @@ function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsPrimitiv
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap text-sm font-medium transition-colors outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        // Segmented: a lifted pill for the active option.
-        'group-data-[variant=segmented]/list:rounded-sm',
+        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-sm px-3 py-1 text-sm font-medium transition-colors outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         'data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground',
-        'rounded-sm px-3 py-1 data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:ring-1 data-[state=active]:ring-inset data-[state=active]:ring-primary/40',
+        'data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:ring-1 data-[state=active]:ring-inset data-[state=active]:ring-primary/40',
         className,
       )}
       {...props}

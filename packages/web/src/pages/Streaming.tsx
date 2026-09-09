@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+import { cn } from '../lib/utils';
+
 import {
   analyseStream,
   checkResponsesLifecycle,
@@ -13,7 +15,20 @@ import type { AuthScheme, Exchange, StreamChunk, SurfaceSpec } from '@tokenshiel
 import { api } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
 import { RequestComposer } from '../components/RequestComposer';
-import { Button, Card, Checkbox, Empty, StatusPill, VerdictPill } from '../components/ui';
+import {
+  Button,
+  Card,
+  Checkbox,
+  Empty,
+  StatusPill,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  VerdictPill,
+} from '../components/ui';
 import { useComposer } from '../hooks/useComposer';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
 
@@ -134,13 +149,14 @@ export function Streaming(props: StreamingProps) {
               {streaming ? 'Streaming…' : 'Stream'}
             </Button>
             {streaming && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={stop}
-                className="rounded-md border border-rose-800 px-3 py-2 text-sm text-rose-300 hover:bg-rose-950/30"
+                className="border-destructive/50 text-destructive-foreground hover:bg-destructive/15"
               >
                 Stop
-              </button>
+              </Button>
             )}
           </>
         }
@@ -298,39 +314,40 @@ export function Streaming(props: StreamingProps) {
             subtitle="mcp_tool_call frames — the only client-visible account of brokered work"
           >
             <div className="overflow-hidden rounded-md border border-zinc-800">
-              <table className="w-full text-left text-[11px]">
-                <thead className="bg-zinc-900/80 text-[10px] uppercase tracking-wider text-zinc-500">
-                  <tr>
-                    <th className="px-2 py-1.5 font-medium">Tool</th>
-                    <th className="px-2 py-1.5 font-medium">Server</th>
-                    <th className="px-2 py-1.5 font-medium">Status</th>
-                    <th className="px-2 py-1.5 text-right font-medium">ms</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="text-[11px]">
+                <TableHeader className="bg-muted/50 text-[10px] text-muted-foreground">
+                  <TableRow>
+                    <TableHead>Tool</TableHead>
+                    <TableHead>Server</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">ms</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {analysis.mcpCalls.map((c, i) => (
-                    <tr key={`${c.server}-${c.tool}-${i}`} className="border-t border-zinc-800/60">
-                      <td className="mono px-2 py-1 text-sky-300">{c.tool}</td>
-                      <td className="px-2 py-1 text-zinc-400">{c.server}</td>
-                      <td
-                        className={`mono px-2 py-1 ${
+                    <TableRow key={`${c.server}-${c.tool}-${i}`}>
+                      <TableCell className="mono text-primary">{c.tool}</TableCell>
+                      <TableCell className="text-muted-foreground">{c.server}</TableCell>
+                      <TableCell
+                        className={cn(
+                          'mono',
                           c.status === 'error'
-                            ? 'text-rose-300'
+                            ? 'text-fail-foreground'
                             : c.status === 'running'
-                              ? 'text-amber-300'
-                              : 'text-zinc-300'
-                        }`}
+                              ? 'text-warn-foreground'
+                              : 'text-foreground/80',
+                        )}
                       >
                         {c.status}
                         {c.status === 'running' && ' (never completed)'}
-                      </td>
-                      <td className="mono px-2 py-1 text-right text-zinc-500">
+                      </TableCell>
+                      <TableCell className="mono text-right text-muted-foreground">
                         {c.durationMs ?? '—'}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </Card>
         )}
@@ -387,26 +404,26 @@ function ChunkTimeline({
   return (
     <Card title="Frame timeline" subtitle={`${chunks.length} frames, newest last`}>
       <div className="max-h-96 overflow-auto rounded-md border border-zinc-800">
-        <table className="w-full text-left text-xs">
-          <thead className="sticky top-0 bg-zinc-900/95 text-[10px] uppercase tracking-wider text-zinc-500">
-            <tr>
-              <th className="px-2 py-1.5 font-medium">#</th>
-              <th className="px-2 py-1.5 font-medium">t</th>
-              <th className="px-2 py-1.5 font-medium">gap</th>
-              <th className="px-2 py-1.5 font-medium">event</th>
-              <th className="px-2 py-1.5 font-medium">delta</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table className="text-xs">
+          <TableHeader className="sticky top-0 bg-zinc-900/95 text-[10px] text-muted-foreground">
+            <TableRow>
+              <TableHead>#</TableHead>
+              <TableHead>t</TableHead>
+              <TableHead>gap</TableHead>
+              <TableHead>event</TableHead>
+              <TableHead>delta</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {chunks.map((chunk, i) => {
               const gap = i === 0 ? 0 : gapMs(chunk.t, chunks[i - 1]?.t ?? 0);
               const delta = readStreamDelta(surfaceId, chunk);
               const label = chunk.done === true ? '[DONE]' : (chunk.event ?? '—');
               return (
-                <tr key={chunk.seq} className="border-t border-zinc-800/60">
-                  <td className="mono px-2 py-1 text-zinc-600">{chunk.seq}</td>
-                  <td className="mono px-2 py-1 text-zinc-400">{chunk.t}</td>
-                  <td className="px-2 py-1">
+                <TableRow key={chunk.seq} className="border-border">
+                  <TableCell className="mono text-muted-foreground/70">{chunk.seq}</TableCell>
+                  <TableCell className="mono text-muted-foreground">{chunk.t}</TableCell>
+                  <TableCell>
                     <div className="flex items-center gap-1.5">
                       <div
                         className="h-1.5 rounded-full bg-sky-700"
@@ -414,8 +431,8 @@ function ChunkTimeline({
                       />
                       <span className="mono text-zinc-600">{gap}</span>
                     </div>
-                  </td>
-                  <td className="mono px-2 py-1 text-zinc-500">
+                  </TableCell>
+                  <TableCell className="mono text-muted-foreground">
                     {chunk.comment === true ? ': comment' : label}
                     {chunk.incomplete === true && <span className="ml-1 text-rose-400">cut</span>}
                     {chunk.parsed === undefined &&
@@ -423,19 +440,19 @@ function ChunkTimeline({
                       chunk.comment !== true && (
                         <span className="ml-1 text-amber-400">unparsed</span>
                       )}
-                  </td>
-                  <td className="mono px-2 py-1 text-zinc-300">
+                  </TableCell>
+                  <TableCell className="mono text-foreground/80">
                     {delta !== undefined ? (
                       JSON.stringify(delta)
                     ) : (
                       <span className="text-zinc-700">{chunk.raw.slice(0, 60) || '—'}</span>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </Card>
   );

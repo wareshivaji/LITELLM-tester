@@ -238,7 +238,8 @@ async function runScenarios(
   const reader = res.body.getReader();
   const dispatch = (frames: StreamChunk[]): void => {
     for (const f of frames) {
-      if (f.event === 'start') handlers.onStart(f.parsed as { total: number; skippedSpending: number });
+      if (f.event === 'start')
+        handlers.onStart(f.parsed as { total: number; skippedSpending: number });
       else if (f.event === 'result') handlers.onResult(f.parsed as ScenarioResult);
       else if (f.event === 'done') handlers.onDone(f.parsed as ScenarioReport);
       else if (f.event === 'error') {
@@ -307,7 +308,11 @@ export interface PromptDryRun {
 export async function runPrompts(
   body: Record<string, unknown>,
   handlers: {
-    onStart: (info: { total: number; model: string; estimate: { calls: number; maxOutputTokens: number } }) => void;
+    onStart: (info: {
+      total: number;
+      model: string;
+      estimate: { calls: number; maxOutputTokens: number };
+    }) => void;
     onResult: (result: PromptResult) => void;
     onDone: () => void;
     onError: (message: string) => void;
@@ -337,7 +342,13 @@ export async function runPrompts(
   const dispatch = (frames: StreamChunk[]): void => {
     for (const f of frames) {
       if (f.event === 'start') {
-        handlers.onStart(f.parsed as { total: number; model: string; estimate: { calls: number; maxOutputTokens: number } });
+        handlers.onStart(
+          f.parsed as {
+            total: number;
+            model: string;
+            estimate: { calls: number; maxOutputTokens: number };
+          },
+        );
       } else if (f.event === 'result') handlers.onResult(f.parsed as PromptResult);
       else if (f.event === 'done') handlers.onDone();
       else if (f.event === 'error') {
