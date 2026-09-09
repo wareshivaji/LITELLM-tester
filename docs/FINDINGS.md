@@ -7,17 +7,24 @@ unusual.
 
 ## The 2026-09-09 sweep
 
-**Every `stale` entry has been re-measured. Seven were fixed and one no longer
-reproduces — a third of the document was wrong.**
+**Every `stale` entry has been re-measured, and then the dormant Python suite
+was revived and found more. Nine defects were fixed, one no longer reproduces,
+and one contradiction that had been recorded as unresolvable is resolved.**
 
 | outcome | n | ids |
 |---|---|---|
-| **fixed** | 7 | LM-2, LM-3, LM-6, LM-M1, F-8, F-12, F-15 |
+| **fixed** | 9 | LM-1, LM-2 (text arrays *and* vision), LM-3, LM-6, LM-M1, F-8, F-12, F-15 |
 | **still reproduces** | 8 | LM-4, LM-T1, LM-T2, F-4, F-5, F-14, F-16, F-17 |
 | no longer reproduces, condition changed | 1 | F-13 |
 | could not be measured | 2 | F-6 (needs a big tool payload), F-7 (needs fault injection) |
 | untouched, measured 09-06 | 6 | F-1, F-2, F-3, F-9, F-10, F-11 |
 | deferred since first recorded | 1 | LM-5 |
+
+**Two of the nine fixes came from the suite, not from the sweep** — LM-2's
+vision half and both LANDMINE-1 envelope cases. A person checking by hand sent
+text-only content arrays and could not reach an error path that would settle
+LM-1; the assertions that answered both were sitting in the repo, unexecuted.
+That is the case for keeping the tripwire alive, made by the tripwire.
 
 Cost of the whole sweep: **under four cents**, most of it on the four MCP cases
 that need a real tool round-trip. The parameter checks came to $0.000018 —
@@ -107,6 +114,13 @@ guardrail rule actually configured.
 broadest client-compatibility break on the list, so it is the most valuable
 fix here. Note LM-T2 is the SAME root cause on the tool path and is still
 broken — the fix reached `messages[].content` and not `role:"tool"` content.
+
+**Vision is fixed too, and the hand sweep missed it.** This entry recorded
+"vision is unsupported" as part of the same root cause. `test_p4_vision_content`
+XPASSED when the suite ran again: a message mixing a `text` part and an
+`image_url` part is now accepted. The sweep checked text-only content arrays and
+never sent an image, so a person looking by hand got half the answer and the
+suite got the other half.
 
 *Originally recorded, and kept verbatim because both repos cite this id:*
 
@@ -365,16 +379,33 @@ error parser — but the scope of LM-1 needs re-measuring before anyone acts on
 it. **Not resolved here on purpose:** guessing which is current would put a
 false fact in a document whose value is that it does not contain any.
 
-**The 2026-09-09 sweep could not advance this either**, and the reason is the
-same one recorded under F-1: the two endpoints that would settle it are
-unreachable — `/v1/moderations` is out of scope, and no available key can trip a
-guardrail. Every 4xx we could produce on 09-09 came back properly
-OpenAI-shaped, which is consistent with F-1's half of the disagreement but does
-not test LM-1's. The clearest example, from the GLM `stop` refusal:
+## RESOLVED 2026-09-09 — F-1 was right, LM-1 is fixed
+
+The hand sweep could not settle this. **Reviving the Python suite did**, within
+minutes of it running again, and by the mechanism this document had been
+claiming all along: two `LANDMINE-1` strict xfails XPASSED.
+
+- `test_e1_unknown_model_error_shape` asserts the error is an **object** with a
+  populated `type`. It passes.
+- `test_e2_bad_body_error_shape` asserts a 400 body is an object whose `error`
+  has at least `message` and `type`. It passes.
+
+**So LM-1's claim — that the 400 body is uniformly flat — is no longer true.**
+F-1's half of the disagreement was the accurate one: the envelope is
+**per-path**, and the properly-shaped paths are now the rule rather than the
+exception. What remains flat is `/v1/moderations`, which is F-1's own subject
+and which left the tested surfaces, so no automated check can reach it.
+
+The clearest positive example, from the GLM `stop` refusal:
 `{"error": {"message": "This model doesn't support the stopSequences field.
 Remove stopSequences and try again.", "type": "invalid_request_error", "param":
 null, "code": "bad_request"}}` — correct shape, correct OpenAI `type`, and a
 message a client can act on.
+
+*A note on how this was found, because it is the argument for the tripwire.* I
+had recorded this contradiction as unresolvable twice: once at the merge, and
+again on 09-09 after failing to reach either endpoint by hand. Both times the
+answer was already sitting in an assertion that was not being executed.
 
 ---
 
@@ -431,9 +462,29 @@ built to catch exactly that was dormant, and the fixes surfaced only because
 this sweep went and looked. A strict xfail that never runs is not a tripwire,
 it is a comment.
 
-*Fix:* point `_util.require_key()` at `_creds.resolve()` with the
-`TSLAB_KEY_*` slots, so one credential model serves both repos. Until then,
-treat the `strict=True` markers as documentation and not as enforcement.
+**Fixed 2026-09-09.** `_creds` now reads the lab's `.env.local` — importing
+the engine's dotenv loader rather than adding a second one — and resolves a key
+through `TS_KEY` / `TOKENSHIELD_API_KEY`, then `TSLAB_SUITE_ALIAS`, then the
+`TSLAB_DEFAULT_KEY` alias already declared in that file. Every run now prints
+the gateway and which variable supplied the key, masked, on line one; the
+shadowing bug that cost two hours and the dormancy that cost weeks would both
+have been visible there.
+
+**What it found in its first run: six XPASSes.** Four are recorded above (LM-2
+text arrays, LM-2 vision, and both LANDMINE-1 envelope cases). The markers for
+those are now plain tests, so a regression fails rather than surprising anyone,
+and `LANDMINE-3`'s marker was re-pointed — it still xfails, but for a provider
+limit rather than the gateway defect its label named, which is a false green.
+
+**One stale assumption remains, and it is a coverage gap rather than a defect.**
+The suite is still tuned for a "GLM Testing" key that is no longer in the
+credential store: the default model matrix is the three `bedrock-glm-*` models,
+so `n > 1`, `logprobs` and the deepseek routing case all SKIP for want of
+`TS_MODEL_OPENAI` / `TS_MODEL_DEEPSEEK`. The key now in use reaches 53 models
+including nova and claude. Those three cases were covered by hand on 09-09 —
+LM-4 and LM-6 above — but the suite cannot see them, so nothing would catch a
+regression. Pointing the matrix at the key's real catalogue is the next thing
+worth doing here.
 
 ---
 
