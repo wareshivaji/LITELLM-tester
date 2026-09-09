@@ -6,10 +6,22 @@ import type { AuthScheme, Exchange, SdkMode, SdkOutcome } from '@tokenshield/cli
 import { api } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
 import { RequestComposer } from '../components/RequestComposer';
-import { Card, Empty, Json, StatusPill, VerdictPill } from '../components/ui';
+import {
+  Button,
+  Card,
+  Empty,
+  Json,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  StatusPill,
+  VerdictPill,
+} from '../components/ui';
 import { useComposer } from '../hooks/useComposer';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
-
 
 const MODE_LABEL: Record<SdkMode, string> = {
   raw: 'raw HTTP',
@@ -129,34 +141,34 @@ export function SdkCompare(props: SdkCompareProps) {
                   })}
                 </div>
               </div>
-              <label className="flex items-center gap-2 text-xs text-zinc-400">
-                <span className="uppercase tracking-wider text-zinc-500">SDK maxRetries</span>
-                <select
-                  value={maxRetries}
-                  onChange={(e) => setMaxRetries(Number(e.target.value))}
-                  className="mono rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-200"
-                >
-                  {[0, 1, 2, 3].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-zinc-600">
+              <div className="flex items-center gap-2 text-xs">
+                <Label>SDK maxRetries</Label>
+                <Select value={String(maxRetries)} onValueChange={(v) => setMaxRetries(Number(v))}>
+                  <SelectTrigger size="sm" className="mono w-16">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[0, 1, 2, 3].map((r) => (
+                      <SelectItem key={r} value={String(r)} className="mono">
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-muted-foreground">
                   raise it to watch an SDK retry a 429 or 5xx on its own schedule
                 </span>
-              </label>
+              </div>
             </div>
           }
           actions={
-            <button
+            <Button
               type="button"
               onClick={run}
               disabled={running || !composer.parsed.ok || selected.length === 0}
-              className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {running ? 'Running…' : `Send via ${selected.length} client(s)`}
-            </button>
+            </Button>
           }
           onSubmit={run}
           sendHint={
@@ -286,7 +298,9 @@ function OutcomeCard({ outcome }: { outcome: SdkOutcome }) {
     <Card
       title={MODE_LABEL[outcome.mode]}
       subtitle={MODE_BLURB[outcome.mode]}
-      right={<StatusPill status={outcome.ok ? 'pass' : 'fail'} label={outcome.ok ? 'ok' : 'threw'} />}
+      right={
+        <StatusPill status={outcome.ok ? 'pass' : 'fail'} label={outcome.ok ? 'ok' : 'threw'} />
+      }
     >
       <div className="space-y-3">
         {outcome.failure !== undefined && (

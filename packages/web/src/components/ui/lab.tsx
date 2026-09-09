@@ -1,7 +1,28 @@
+import type { CheckStatus, VerdictKind } from '@tokenshield/client';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 
-import type { CheckStatus, VerdictKind } from '@tokenshield/client';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
+
+/**
+ * The lab's own components - the ones that encode something about THIS domain
+ * rather than about buttons.
+ *
+ * This file is what `components/ui.tsx` used to be. It kept its exports and
+ * lost its styling: every colour and radius that used to be spelled out here as
+ * literal utility classes now comes from a token or a primitive variant. The
+ * public API is unchanged on purpose, so the thirteen files that import from
+ * `components/ui` did not have to be touched to gain the new look.
+ *
+ * What stayed here and what moved out was decided by one question: would a
+ * different app want this? `Button` and `Select` would go in any app, so they
+ * are primitives. `VerdictLegend` explains the classifier's vocabulary and
+ * `Json` exists because this tool's output gets pasted into tickets - neither
+ * means anything elsewhere.
+ */
 
 /** Re-exported so pages can type their own outcome→tone maps. */
 export type CheckStatusLike = CheckStatus;
@@ -18,11 +39,13 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40">
-      <header className="flex items-start justify-between gap-4 border-b border-zinc-800 px-4 py-3">
+    <section className="rounded-lg border border-border bg-card">
+      <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
         <div>
-          <h2 className="text-sm font-semibold tracking-wide text-zinc-100">{title}</h2>
-          {subtitle !== undefined && <p className="mt-0.5 text-xs text-zinc-500">{subtitle}</p>}
+          <h2 className="text-sm font-semibold tracking-wide text-card-foreground">{title}</h2>
+          {subtitle !== undefined && (
+            <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+          )}
         </div>
         {right}
       </header>
@@ -31,13 +54,6 @@ export function Card({
   );
 }
 
-const CHECK_TONE: Record<CheckStatus, string> = {
-  pass: 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30',
-  warn: 'bg-amber-500/10 text-amber-300 ring-amber-500/30',
-  fail: 'bg-rose-500/10 text-rose-300 ring-rose-500/30',
-  skip: 'bg-zinc-500/10 text-zinc-400 ring-zinc-500/30',
-};
-
 const CHECK_GLYPH: Record<CheckStatus, string> = {
   pass: '✓',
   warn: '!',
@@ -45,14 +61,20 @@ const CHECK_GLYPH: Record<CheckStatus, string> = {
   skip: '–',
 };
 
+/**
+ * A check outcome.
+ *
+ * `CheckStatus` and `Badge`'s variants are deliberately the same four names, so
+ * this is a lookup rather than a mapping table. The glyph is kept because these
+ * pills are read in dense rows where colour alone is not enough - and colour
+ * alone is not an accessible distinction in any case.
+ */
 export function StatusPill({ status, label }: { status: CheckStatus; label?: string }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${CHECK_TONE[status]}`}
-    >
+    <Badge variant={status}>
       <span aria-hidden>{CHECK_GLYPH[status]}</span>
       {label ?? status}
-    </span>
+    </Badge>
   );
 }
 
@@ -76,28 +98,38 @@ export function VerdictPill({ kind }: { kind: VerdictKind }) {
   return <StatusPill status={verdictTone(kind)} label={kind} />;
 }
 
+/**
+ * A labelled control.
+ *
+ * No longer a `<label>` wrapping its child. It could be while every control was
+ * a native `<select>`; a composed Radix control is several elements and nesting
+ * one inside a label makes the label's implicit association ambiguous. `Label`
+ * handles the association instead, and `htmlFor` can be passed when a control
+ * needs it explicitly.
+ */
 export function Field({
   label,
   hint,
+  htmlFor,
   children,
 }: {
   label: string;
   hint?: string;
+  htmlFor?: string;
   children: ReactNode;
 }) {
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-zinc-500">
+    <div className="block">
+      <Label htmlFor={htmlFor} className="mb-1.5">
         {label}
-      </span>
+      </Label>
       {children}
-      {hint !== undefined && <span className="mt-1 block text-xs text-zinc-600">{hint}</span>}
-    </label>
+      {hint !== undefined && (
+        <span className="mt-1 block text-xs text-muted-foreground/70">{hint}</span>
+      )}
+    </div>
   );
 }
-
-export const selectClass =
-  'w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-600/40';
 
 /**
  * A JSON block you can actually get data out of.
@@ -125,16 +157,13 @@ export function Json({
     <div className="relative">
       <div className="absolute right-2 top-2 z-10 flex gap-1">
         {(big || collapsedByDefault === true) && (
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            className="rounded border border-zinc-700 bg-zinc-900/90 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:border-zinc-600"
-          >
+          <Button variant="outline" size="xs" onClick={() => setOpen(!open)}>
             {open ? 'collapse' : `expand (${text.length.toLocaleString()} chars)`}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="xs"
           onClick={() => {
             void navigator.clipboard
               .writeText(text)
@@ -144,20 +173,19 @@ export function Json({
               })
               .catch(() => setCopied(false));
           }}
-          className="rounded border border-zinc-700 bg-zinc-900/90 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:border-zinc-600"
         >
           {copied ? 'copied' : 'copy'}
-        </button>
+        </Button>
       </div>
       {open ? (
         <pre
-          className="mono overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 pr-20 text-xs leading-relaxed text-zinc-300"
+          className="mono overflow-auto rounded-md border border-border bg-background p-3 pr-20 text-xs leading-relaxed text-foreground/80"
           style={{ maxHeight }}
         >
           {text}
         </pre>
       ) : (
-        <div className="mono rounded-md border border-zinc-800 bg-zinc-950 p-3 pr-32 text-xs text-zinc-600">
+        <div className="mono rounded-md border border-border bg-background p-3 pr-32 text-xs text-muted-foreground">
           {text.slice(0, 140).replace(/\s+/g, ' ')}…
         </div>
       )}
@@ -192,19 +220,20 @@ export function VerdictLegend() {
   ];
   return (
     <div className="text-xs">
-      <button
-        type="button"
+      <Button
+        variant="link"
+        size="xs"
+        className="text-xs text-muted-foreground underline decoration-dotted hover:text-foreground hover:no-underline"
         onClick={() => setOpen(!open)}
-        className="text-zinc-500 underline decoration-dotted hover:text-zinc-300"
       >
         what do these verdicts mean?
-      </button>
+      </Button>
       {open && (
-        <dl className="mt-2 grid gap-x-4 gap-y-1 rounded-md border border-zinc-800 bg-zinc-950/60 p-3 sm:grid-cols-2">
+        <dl className="mt-2 grid gap-x-4 gap-y-1 rounded-md border border-border bg-background/60 p-3 sm:grid-cols-2">
           {rows.map(([name, meaning]) => (
             <div key={name} className="flex gap-2">
-              <dt className="mono w-28 shrink-0 text-zinc-400">{name}</dt>
-              <dd className="text-zinc-500">{meaning}</dd>
+              <dt className="mono w-28 shrink-0 text-foreground/70">{name}</dt>
+              <dd className="text-muted-foreground">{meaning}</dd>
             </div>
           ))}
         </dl>
@@ -223,18 +252,21 @@ export function Notice({
   title: string;
   children: ReactNode;
 }) {
-  const styles =
-    tone === 'warn'
-      ? 'border-amber-900/60 bg-amber-950/20 text-amber-200/90'
-      : 'border-sky-900/60 bg-sky-950/20 text-sky-200/90';
   return (
-    <div className={`rounded-lg border p-4 text-sm ${styles}`}>
+    <div
+      className={cn(
+        'rounded-lg border p-4 text-sm',
+        tone === 'warn'
+          ? 'border-warn-foreground/25 bg-warn text-warn-foreground'
+          : 'border-info-foreground/25 bg-info text-info-foreground',
+      )}
+    >
       <h3 className="text-xs font-semibold uppercase tracking-wider">{title}</h3>
-      <div className="mt-2 space-y-1">{children}</div>
+      <div className="mt-2 space-y-1 opacity-90">{children}</div>
     </div>
   );
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="py-6 text-center text-sm text-zinc-600">{children}</p>;
+  return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>;
 }

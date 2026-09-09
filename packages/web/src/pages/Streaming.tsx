@@ -13,10 +13,9 @@ import type { AuthScheme, Exchange, StreamChunk, SurfaceSpec } from '@tokenshiel
 import { api } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
 import { RequestComposer } from '../components/RequestComposer';
-import { Card, Empty, StatusPill, VerdictPill } from '../components/ui';
+import { Button, Card, Checkbox, Empty, StatusPill, VerdictPill } from '../components/ui';
 import { useComposer } from '../hooks/useComposer';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
-
 
 interface StreamingProps {
   profileId: string;
@@ -114,12 +113,14 @@ export function Streaming(props: StreamingProps) {
         composer={composer}
         surfaces={STREAMING_SURFACES}
         extraControls={
-          <label className="flex items-center gap-2 text-xs text-zinc-400">
-            <input
-              type="checkbox"
+          <label
+            htmlFor="include-usage"
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+          >
+            <Checkbox
+              id="include-usage"
               checked={includeUsage}
-              onChange={(e) => setIncludeUsage(e.target.checked)}
-              className="accent-sky-600"
+              onCheckedChange={(v) => setIncludeUsage(v === true)}
             />
             <span>
               <span className="mono">stream_options.include_usage</span> — ask for token counts in
@@ -129,14 +130,9 @@ export function Streaming(props: StreamingProps) {
         }
         actions={
           <>
-            <button
-              type="button"
-              onClick={start}
-              disabled={streaming || !composer.parsed.ok}
-              className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <Button type="button" onClick={start} disabled={streaming || !composer.parsed.ok}>
               {streaming ? 'Streaming…' : 'Stream'}
-            </button>
+            </Button>
             {streaming && (
               <button
                 type="button"
@@ -256,9 +252,9 @@ export function Streaming(props: StreamingProps) {
             <p className="mt-1 text-[10px] leading-relaxed text-zinc-600">
               This check is deliberately <strong>stricter than LiteLLM&rsquo;s</strong>, which
               tolerates several <code className="mono">response.created</code> /{' '}
-              <code className="mono">completed</code> pairs with different ids in one stream. That is
-              not the shape a Responses stream is defined to have, and a client tracking one response
-              id breaks on it.
+              <code className="mono">completed</code> pairs with different ids in one stream. That
+              is not the shape a Responses stream is defined to have, and a client tracking one
+              response id breaks on it.
             </p>
           </Card>
         )}
@@ -421,12 +417,12 @@ function ChunkTimeline({
                   </td>
                   <td className="mono px-2 py-1 text-zinc-500">
                     {chunk.comment === true ? ': comment' : label}
-                    {chunk.incomplete === true && (
-                      <span className="ml-1 text-rose-400">cut</span>
-                    )}
-                    {chunk.parsed === undefined && chunk.done !== true && chunk.comment !== true && (
-                      <span className="ml-1 text-amber-400">unparsed</span>
-                    )}
+                    {chunk.incomplete === true && <span className="ml-1 text-rose-400">cut</span>}
+                    {chunk.parsed === undefined &&
+                      chunk.done !== true &&
+                      chunk.comment !== true && (
+                        <span className="ml-1 text-amber-400">unparsed</span>
+                      )}
                   </td>
                   <td className="mono px-2 py-1 text-zinc-300">
                     {delta !== undefined ? (

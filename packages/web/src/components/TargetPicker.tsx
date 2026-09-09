@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { KeyKind, LabKeyRef, LabProfile } from '@tokenshield/client';
 
 import { api } from '../api';
-import { Card, selectClass } from './ui';
+import { Button, Card, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui';
 
 const inputClass =
   'w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-600 focus:ring-1 focus:ring-sky-600/40';
@@ -111,23 +111,16 @@ export function TargetPicker({
       title="Targets"
       subtitle="Everything this lab can point at. Switch between them in the bar above; add and remove them here."
       right={
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={running}
-          className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
-        >
+        <Button type="button" onClick={onRun} disabled={running} size="sm">
           {running ? 'Running preflight…' : 'Run preflight'}
-        </button>
+        </Button>
       }
     >
       <div className="grid gap-5 md:grid-cols-2">
         {/* ── Gateways ── */}
         <section>
           <div className="mb-2 flex items-baseline justify-between">
-            <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-              Gateways
-            </h3>
+            <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">Gateways</h3>
             <button
               type="button"
               onClick={() => {
@@ -247,18 +240,21 @@ export function TargetPicker({
                   if (e.key === 'Enter') void submitKey();
                 }}
               />
-              <select
-                className={selectClass}
-                value={keyKind}
-                onChange={(e) => setKeyKind(e.target.value as KeyKind)}
-              >
-                <option value="api">api key (cg-ak-)</option>
-                <option value="management">management key (cg-mk-)</option>
-                <option value="admin">admin key</option>
-              </select>
+              <Select value={keyKind} onValueChange={(v) => setKeyKind(v as KeyKind)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="api">api key (cg-ak-)</SelectItem>
+                  <SelectItem value="management">management key (cg-mk-)</SelectItem>
+                  <SelectItem value="admin">admin key</SelectItem>
+                </SelectContent>
+              </Select>
               <button
                 type="button"
-                disabled={busy || keySecret.trim().length === 0 || keyAliasInput.trim().length === 0}
+                disabled={
+                  busy || keySecret.trim().length === 0 || keyAliasInput.trim().length === 0
+                }
                 onClick={() => void submitKey()}
                 className="w-full rounded-md border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-900/40 disabled:opacity-40"
               >

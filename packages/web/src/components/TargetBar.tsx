@@ -1,5 +1,18 @@
 import type { AuthScheme, LabKeyRef, LabProfile } from '@tokenshield/client';
 
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Separator,
+} from './ui';
+
+/** "no key selected" — Radix reserves '' to mean "nothing selected". */
+const NO_KEY = '__none__';
+
 /**
  * The target bar: which gateway, which credential, presented how.
  *
@@ -41,51 +54,59 @@ export function TargetBar({
   const key = apiKeys.find((k) => k.alias === keyAlias);
   const isSession = profile?.source === 'session' || key?.source === 'session';
 
-  const bare =
-    'rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 outline-none hover:border-zinc-600 focus:border-sky-600';
-
   return (
-    <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-zinc-800 bg-zinc-950/90 px-4 py-2">
-      <span className="text-[10px] uppercase tracking-wider text-zinc-600">gateway</span>
-      <select className={bare} value={profileId} onChange={(e) => onProfile(e.target.value)}>
-        {profiles.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}
-            {p.source === 'session' ? ' (session)' : ''}
-          </option>
-        ))}
-      </select>
-      <span className="mono hidden text-[11px] text-zinc-500 lg:inline">{profile?.baseUrl ?? '—'}</span>
+    <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background/90 px-4 py-2">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">gateway</span>
+      <Select value={profileId} onValueChange={onProfile}>
+        <SelectTrigger size="sm" className="w-auto gap-1.5 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {profiles.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.label}
+              {p.source === 'session' ? ' (session)' : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="mono hidden text-[11px] text-muted-foreground lg:inline">
+        {profile?.baseUrl ?? '—'}
+      </span>
 
-      <span className="text-zinc-800">|</span>
+      <Separator orientation="vertical" className="h-5" />
 
-      <span className="text-[10px] uppercase tracking-wider text-zinc-600">key</span>
-      <select
-        className={bare}
-        value={keyAlias ?? ''}
-        onChange={(e) => onKey(e.target.value === '' ? null : e.target.value)}
-      >
-        <option value="">— none —</option>
-        {apiKeys.map((k) => (
-          <option key={k.alias} value={k.alias}>
-            {k.alias}
-            {k.source === 'session' ? ' (session)' : ''}
-          </option>
-        ))}
-      </select>
-      {key !== undefined && <span className="mono text-[11px] text-zinc-600">{key.masked}</span>}
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">key</span>
+      <Select value={keyAlias ?? NO_KEY} onValueChange={(v) => onKey(v === NO_KEY ? null : v)}>
+        <SelectTrigger size="sm" className="w-auto gap-1.5 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NO_KEY}>— none —</SelectItem>
+          {apiKeys.map((k) => (
+            <SelectItem key={k.alias} value={k.alias}>
+              {k.alias}
+              {k.source === 'session' ? ' (session)' : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {key !== undefined && (
+        <span className="mono text-[11px] text-muted-foreground">{key.masked}</span>
+      )}
 
-      <span className="text-zinc-800">|</span>
+      <Separator orientation="vertical" className="h-5" />
 
       {/* Two options, so a toggle rather than a select — one click, not two. */}
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => onScheme(scheme === 'bearer' ? 'x-api-key' : 'bearer')}
         title="Click to switch how the credential is presented. TokenShield accepts both."
-        className="mono rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-sky-700 hover:text-sky-200"
+        className="mono h-8 px-2 text-[11px]"
       >
         {scheme === 'bearer' ? 'Authorization: Bearer' : 'x-api-key'}
-      </button>
+      </Button>
 
       {isSession && (
         <span
@@ -106,7 +127,9 @@ export function TargetBar({
         }`}
       >
         Exchange log
-        <span className="mono rounded bg-zinc-800 px-1.5 text-[10px] text-zinc-300">{logCount}</span>
+        <span className="mono rounded bg-zinc-800 px-1.5 text-[10px] text-zinc-300">
+          {logCount}
+        </span>
         <span className="text-zinc-600">{logOpen ? '▾' : '▴'}</span>
       </button>
     </header>

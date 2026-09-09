@@ -5,7 +5,20 @@ import type { AuthScheme, Gate, LabKeyRef, VerdictKind } from '@tokenshield/clie
 
 import { api } from '../api';
 import type { BurstResult, MintResult, ProbeResult } from '../api';
-import { Card, Empty, selectClass, StatusPill, verdictTone, VerdictPill } from '../components/ui';
+import {
+  Button,
+  Card,
+  Empty,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  StatusPill,
+  verdictTone,
+  VerdictPill,
+} from '../components/ui';
 
 interface GovernanceProps {
   profileId: string;
@@ -133,42 +146,46 @@ function MintCard({
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Management key">
-              <select className={selectClass} value={mgmt} onChange={(e) => setMgmt(e.target.value)}>
-                {managementKeys.map((k) => (
-                  <option key={k.alias} value={k.alias}>
-                    {k.alias}
-                  </option>
-                ))}
-              </select>
+              <Select value={mgmt} onValueChange={setMgmt}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {managementKeys.map((k) => (
+                    <SelectItem key={k.alias} value={k.alias}>
+                      {k.alias}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
             <Field label="Name">
-              <input className={selectClass} value={name} onChange={(e) => setName(e.target.value)} />
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
             <Field label="Budget USD (daily)" hint="the cap you intend to blow through">
-              <input
-                className={`mono ${selectClass}`}
-                value={budget}
-                onChange={(e) => setBudget(e.target.value)}
-              />
+              <Input className="mono" value={budget} onChange={(e) => setBudget(e.target.value)} />
             </Field>
             <Field label="Expires in days">
-              <input
-                className={`mono ${selectClass}`}
+              <Input
+                className="mono"
                 value={expires}
                 onChange={(e) => setExpires(e.target.value)}
               />
             </Field>
             <Field label="allowed_models" hint="comma separated; blank = whatever the org allows">
-              <input
-                className={`mono ${selectClass}`}
+              <Input
+                className="mono"
                 placeholder="bedrock-nova-micro"
                 value={allowed}
                 onChange={(e) => setAllowed(e.target.value)}
               />
             </Field>
-            <Field label="ip_allow_list" hint="to test the gate, use an address this machine has not got">
-              <input
-                className={`mono ${selectClass}`}
+            <Field
+              label="ip_allow_list"
+              hint="to test the gate, use an address this machine has not got"
+            >
+              <Input
+                className="mono"
                 placeholder="203.0.113.0/24"
                 value={ipList}
                 onChange={(e) => setIpList(e.target.value)}
@@ -177,14 +194,9 @@ function MintCard({
           </div>
 
           <div className="mt-4 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={mint}
-              disabled={busy || name.trim().length === 0}
-              className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
-            >
+            <Button type="button" onClick={mint} disabled={busy || name.trim().length === 0}>
               {busy ? 'Minting…' : 'Mint key'}
-            </button>
+            </Button>
             <span className="text-xs text-zinc-600">
               the new key is registered as a session credential and selected — its raw value never
               reaches this page
@@ -256,7 +268,8 @@ function GateCard({
   const [outcome, setOutcome] = useState<GateOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const runnable = gate.id === 'rate-limit' || gate.id === 'allowed-models' || gate.id === 'provider-binding';
+  const runnable =
+    gate.id === 'rate-limit' || gate.id === 'allowed-models' || gate.id === 'provider-binding';
 
   function trip(): void {
     setBusy(true);
@@ -316,14 +329,15 @@ function GateCard({
       )}
 
       <div className="mt-3 flex items-center gap-3">
-        <button
+        <Button
           type="button"
           onClick={trip}
           disabled={busy || !runnable || !hasKey}
-          className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+          variant="outline"
+          size="sm"
         >
           {busy ? 'Running…' : 'Trip it'}
-        </button>
+        </Button>
         {!runnable && (
           <span className="text-[11px] text-zinc-600">
             drive this one from the Playground with the key it needs
@@ -365,9 +379,7 @@ function BurstReport({ gate, data }: { gate: Gate; data: BurstResult }) {
           : `${data.attempted} requests in ${data.elapsedMs} ms, never refused`}
         {data.retryAfterSeconds !== null && ` · retry-after ${data.retryAfterSeconds}s`}
       </div>
-      {data.verdict !== null && (
-        <p className="text-[11px] text-zinc-500">{data.verdict.detail}</p>
-      )}
+      {data.verdict !== null && <p className="text-[11px] text-zinc-500">{data.verdict.detail}</p>}
       {!fired && (
         <p className="text-[11px] text-zinc-600">
           Either the limit is above {data.attempted} for this key, or the window rolled mid-burst.

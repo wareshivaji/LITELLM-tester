@@ -11,9 +11,31 @@ import type {
 import { api } from '../api';
 import type { LabConfigResponse, ScenarioSuiteInfo } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
-import { Card, Empty, selectClass, StatusPill } from '../components/ui';
+import {
+  Button,
+  Card,
+  Checkbox,
+  Empty,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  StatusPill,
+} from '../components/ui';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
 import type { CheckStatusLike } from '../components/ui';
+
+/**
+ * Stands in for "no second gateway" inside the comparison dropdown.
+ *
+ * The state itself is still `''`; this value never leaves the Select. Radix
+ * reserves the empty string to mean "nothing is selected", so an item carrying
+ * `value=""` throws on mount - and "one target only" is a genuine choice a
+ * reader picks, not an absence. The two are translated at the Select's edge so
+ * nothing downstream has to know about the sentinel.
+ */
+const NO_SECOND_TARGET = '__none__';
 
 const OUTCOME_TONE: Record<ScenarioOutcome, CheckStatusLike> = {
   pass: 'pass',
@@ -70,8 +92,7 @@ export function Scenarios(props: ScenariosProps) {
   }, []);
 
   const suite = useMemo(() => suites.find((s) => s.id === suiteId) ?? suites[0], [suites, suiteId]);
-  const pendingCount =
-    suite?.scenarios.filter((sc) => sc.notImplemented !== undefined).length ?? 0;
+  const pendingCount = suite?.scenarios.filter((sc) => sc.notImplemented !== undefined).length ?? 0;
 
   const [secondProfile, setSecondProfile] = useState('');
   const models = props.catalogue.models;
@@ -112,7 +133,8 @@ export function Scenarios(props: ScenariosProps) {
         profileId: props.profileId,
         keyAlias: props.keyAlias,
         scheme: props.scheme,
-        label: props.config.profiles.find((p) => p.id === props.profileId)?.label ?? props.profileId,
+        label:
+          props.config.profiles.find((p) => p.id === props.profileId)?.label ?? props.profileId,
       },
     ];
     if (secondProfile.length > 0 && secondProfile !== props.profileId) {
@@ -156,7 +178,7 @@ export function Scenarios(props: ScenariosProps) {
         subtitle={suite?.description ?? ''}
         right={
           report !== null ? (
-            <button
+            <Button
               type="button"
               onClick={() => {
                 api
@@ -166,10 +188,11 @@ export function Scenarios(props: ScenariosProps) {
                     setError(err instanceof Error ? err.message : String(err)),
                   );
               }}
-              className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-200 hover:border-zinc-600"
+              variant="outline"
+              size="sm"
             >
               Export to out/
-            </button>
+            </Button>
           ) : undefined
         }
       >
@@ -193,66 +216,85 @@ export function Scenarios(props: ScenariosProps) {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Labelled label="Model">
-            <select className={selectClass} value={model} onChange={(e) => setModel(e.target.value)}>
-              {models.length === 0 && <option value="">— no models for this key —</option>}
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={model === '' ? undefined : model}
+              onValueChange={setModel}
+              disabled={models.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="— no models for this key —" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Labelled>
           <Labelled label="Embedding model">
-            <select
-              className={selectClass}
-              value={embedModel}
-              onChange={(e) => setEmbedModel(e.target.value)}
+            <Select
+              value={embedModel === '' ? undefined : embedModel}
+              onValueChange={setEmbedModel}
+              disabled={models.length === 0}
             >
-              {models.length === 0 && <option value="">— no models for this key —</option>}
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="— no models for this key —" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Labelled>
           <Labelled label="Compare against" hint="run the same suite on a second gateway">
-            <select
-              className={selectClass}
-              value={secondProfile}
-              onChange={(e) => setSecondProfile(e.target.value)}
+            <Select
+              value={secondProfile === '' ? NO_SECOND_TARGET : secondProfile}
+              onValueChange={(v) => setSecondProfile(v === NO_SECOND_TARGET ? '' : v)}
             >
-              <option value="">— one target only —</option>
-              {props.config.profiles
-                .filter((p) => p.id !== props.profileId)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-            </select>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_SECOND_TARGET}>— one target only —</SelectItem>
+                {props.config.profiles
+                  .filter((p) => p.id !== props.profileId)
+                  .map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
           </Labelled>
           <Labelled label="Pace between calls" hint="raise it if the key has an RPM cap">
-            <select
-              className={selectClass}
-              value={paceMs}
-              onChange={(e) => setPaceMs(Number(e.target.value))}
-            >
-              {[0, 250, 500, 1000].map((n) => (
-                <option key={n} value={n}>
-                  {n} ms
-                </option>
-              ))}
-            </select>
+            <Select value={String(paceMs)} onValueChange={(v) => setPaceMs(Number(v))}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[0, 250, 500, 1000].map((ms) => (
+                  <SelectItem key={ms} value={String(ms)}>
+                    {ms} ms
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Labelled>
         </div>
 
-        <label className="mt-3 flex items-center gap-2 text-xs text-zinc-400">
-          <input
-            type="checkbox"
+        <label
+          htmlFor="include-spending"
+          className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"
+        >
+          <Checkbox
+            id="include-spending"
             checked={includeSpending}
-            onChange={(e) => setIncludeSpending(e.target.checked)}
-            className="accent-sky-600"
+            onCheckedChange={(v) => setIncludeSpending(v === true)}
           />
           include scenarios that reach a provider
           <span className="text-zinc-600">
@@ -271,20 +313,15 @@ export function Scenarios(props: ScenariosProps) {
             {pendingCount} of {suite?.scenarios.length ?? 0} scenarios here test a feature that is
             still being built. Those expectations state the <em>target</em> behaviour, so a{' '}
             <span className="text-zinc-400">not yet</span> row is the expected result and not a
-            defect — and if one comes back{' '}
-            <span className="text-emerald-300">pass</span>, the feature has landed.
+            defect — and if one comes back <span className="text-emerald-300">pass</span>, the
+            feature has landed.
           </p>
         )}
 
         <div className="mt-4 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={run}
-            disabled={running}
-            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
-          >
+          <Button type="button" onClick={run} disabled={running}>
             {running ? `Running… ${live.length}/${total}` : 'Run suite'}
-          </button>
+          </Button>
           {running && (
             <button
               type="button"
@@ -310,12 +347,18 @@ export function Scenarios(props: ScenariosProps) {
       </Card>
 
       {counts !== undefined && (
-        <Card title="Result" subtitle={`${report?.suiteTitle} · ${Math.round(report?.durationMs ?? 0)} ms`}>
+        <Card
+          title="Result"
+          subtitle={`${report?.suiteTitle} · ${Math.round(report?.durationMs ?? 0)} ms`}
+        >
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status="pass" label={`${counts.pass} pass`} />
             {counts.fail > 0 && <StatusPill status="fail" label={`${counts.fail} fail`} />}
             {counts['landmine-present'] > 0 && (
-              <StatusPill status="warn" label={`${counts['landmine-present']} landmine still present`} />
+              <StatusPill
+                status="warn"
+                label={`${counts['landmine-present']} landmine still present`}
+              />
             )}
             {counts['landmine-changed'] > 0 && (
               <StatusPill status="warn" label={`${counts['landmine-changed']} CHANGED`} />
@@ -329,10 +372,10 @@ export function Scenarios(props: ScenariosProps) {
             {counts.error > 0 && <StatusPill status="fail" label={`${counts.error} error`} />}
           </div>
           <p className="mt-3 text-xs text-zinc-500">
-            A <span className="text-amber-300">landmine</span> row matching is the expected state for
-            a known defect — it means the bug is still there. A{' '}
-            <span className="text-amber-300">CHANGED</span> row means the behaviour moved and someone
-            should look: most likely it was fixed. A{' '}
+            A <span className="text-amber-300">landmine</span> row matching is the expected state
+            for a known defect — it means the bug is still there. A{' '}
+            <span className="text-amber-300">CHANGED</span> row means the behaviour moved and
+            someone should look: most likely it was fixed. A{' '}
             <span className="text-zinc-400">not yet</span> row is a feature still being built: the
             expectation states the target behaviour, so this is the expected state — and when it
             turns <span className="text-emerald-300">pass</span>, the feature landed. A{' '}
@@ -416,9 +459,7 @@ function ResultTable({ rows }: { rows: ScenarioResult[] }) {
                     onClick={() => toggle(row)}
                     className="cursor-pointer border-t border-zinc-800/60 hover:bg-zinc-900/60"
                   >
-                    {multiTarget && (
-                      <td className="px-3 py-2 text-zinc-400">{row.targetLabel}</td>
-                    )}
+                    {multiTarget && <td className="px-3 py-2 text-zinc-400">{row.targetLabel}</td>}
                     <td className="px-3 py-2 text-zinc-200">
                       {row.title}
                       {row.landmine !== undefined && (

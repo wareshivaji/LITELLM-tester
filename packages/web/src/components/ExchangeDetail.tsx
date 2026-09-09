@@ -6,7 +6,7 @@ import type { Exchange } from '@tokenshield/client';
 
 import { unknownFieldsIn } from '@tokenshield/client';
 
-import { Json } from './ui';
+import { Button, Json } from './ui';
 
 /**
  * Headers worth pulling to the front. These are exactly the ones a browser
@@ -73,7 +73,9 @@ function HeaderTable({
                 >
                   {name}
                 </td>
-                <td className={`px-3 py-1.5 break-all ${isSignal ? 'text-sky-200' : 'text-zinc-300'}`}>
+                <td
+                  className={`px-3 py-1.5 break-all ${isSignal ? 'text-sky-200' : 'text-zinc-300'}`}
+                >
                   {value}
                 </td>
               </tr>
@@ -88,7 +90,7 @@ function HeaderTable({
 function CurlButton({ exchange }: { exchange: Exchange }) {
   const [copied, setCopied] = useState(false);
   return (
-    <button
+    <Button
       type="button"
       onClick={() => {
         void navigator.clipboard
@@ -99,11 +101,12 @@ function CurlButton({ exchange }: { exchange: Exchange }) {
           })
           .catch(() => setCopied(false));
       }}
-      className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
+      variant="outline"
+      size="sm"
       title="The credential is emitted as $TOKENSHIELD_KEY, never the real value"
     >
       {copied ? 'copied' : 'copy as curl'}
-    </button>
+    </Button>
   );
 }
 
@@ -113,7 +116,10 @@ export function ExchangeDetail({ exchange }: { exchange: Exchange }) {
     <div className="space-y-4 border-t border-zinc-800 bg-zinc-950/60 p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="grid flex-1 grid-cols-2 gap-4 text-xs sm:grid-cols-4">
-          <Stat label="Status" value={res !== undefined ? `${res.status} ${res.statusText}` : '—'} />
+          <Stat
+            label="Status"
+            value={res !== undefined ? `${res.status} ${res.statusText}` : '—'}
+          />
           <Stat label="TTFB" value={`${exchange.timings.ttfbMs} ms`} />
           <Stat label="Total" value={`${exchange.timings.totalMs} ms`} />
           <Stat label="Auth" value={exchange.authScheme} />

@@ -1,7 +1,119 @@
 @import 'tailwindcss';
+/* Supplies `animate-in` / `fade-in-0` / `data-[state=closed]:animate-out`, which
+ * Radix's mount and unmount states drive. Tailwind v4 dropped the v3
+ * `tailwindcss-animate` plugin; this is its replacement. Without it the select
+ * popup appears and vanishes with no transition - not broken, just abrupt. */
+@import 'tw-animate-css';
+
+/**
+ * Design tokens.
+ *
+ * These were not invented here. The palette below is what the pages were
+ * ALREADY using, counted before anything moved: zinc for the neutral scale,
+ * sky for actions, amber for "this spends money", rose for failure, emerald
+ * for ok/free. The problem was never the colours - it was that each meaning
+ * was spelled out as a literal utility class 300-plus times, so changing what
+ * "warning" looks like meant 60 edits and hoping none were missed.
+ *
+ * Naming them once is the actual cleanup. `bg-primary` now means "the action
+ * colour" rather than "sky-600, probably".
+ *
+ * DARK ONLY, on purpose. The app declares `color-scheme: dark` and is a
+ * console; a light theme nobody asked for is two palettes to keep honest
+ * instead of one. The structure is shadcn's, so adding `.light` later is one
+ * block and no component changes.
+ *
+ * Deliberate deviation from shadcn's zinc preset: its `--primary` is near-white
+ * (oklch 0.92). Adopting that would have turned every action button in the app
+ * from blue to white, which is a redesign wearing a refactor's clothes. Primary
+ * stays sky.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Verdict colours. Domain tokens, not decoration: every surface in this app
+   * reports one of these four states, and StatusPill, VerdictPill and Badge
+   * all have to agree on what each looks like. */
+  --color-ok: var(--ok);
+  --color-ok-foreground: var(--ok-foreground);
+  --color-warn: var(--warn);
+  --color-warn-foreground: var(--warn-foreground);
+  --color-fail: var(--fail);
+  --color-fail-foreground: var(--fail-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
 
 :root {
   color-scheme: dark;
+
+  /* 0.5rem, not shadcn's 0.625rem. This is a dense instrument panel and the
+   * softer radius reads as a marketing site at these element sizes. */
+  --radius: 0.5rem;
+
+  /* zinc-950 / zinc-200 - the values the app already shipped (#09090b/#e4e4e7). */
+  --background: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.871 0.006 286.286);
+
+  /* Panels sit one step above the page, not level with it. The old cards were
+   * distinguished by border alone, which disappears on a dim monitor. */
+  --card: oklch(0.181 0.006 285.9);
+  --card-foreground: oklch(0.911 0.006 286.286);
+  --popover: oklch(0.21 0.006 285.885);
+  --popover-foreground: oklch(0.911 0.006 286.286);
+
+  /* sky-600 / sky-500 */
+  --primary: oklch(0.588 0.158 241.966);
+  --primary-foreground: oklch(0.98 0.013 236.62);
+
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.911 0.006 286.286);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.595 0.012 286.1);
+  --accent: oklch(0.274 0.006 286.033);
+  --accent-foreground: oklch(0.911 0.006 286.286);
+
+  /* rose-500 / rose-300, matching the failure colour already in the pages. */
+  --destructive: oklch(0.645 0.222 16.439);
+  --destructive-foreground: oklch(0.892 0.058 10.001);
+
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.588 0.158 241.966);
+
+  /* emerald-400 / amber-400 / rose-400 / sky-400 as the readable foreground,
+   * each over its own 12% wash so a pill carries meaning without shouting. */
+  --ok: oklch(0.696 0.17 162.48 / 14%);
+  --ok-foreground: oklch(0.792 0.181 151.711);
+  --warn: oklch(0.769 0.188 70.08 / 14%);
+  --warn-foreground: oklch(0.828 0.189 84.429);
+  --fail: oklch(0.645 0.222 16.439 / 14%);
+  --fail-foreground: oklch(0.712 0.194 13.428);
+  --info: oklch(0.685 0.169 237.323 / 14%);
+  --info-foreground: oklch(0.746 0.16 232.661);
 }
 
 html,
@@ -12,10 +124,17 @@ body,
 
 body {
   margin: 0;
-  background: #09090b;
-  color: #e4e4e7;
+  background: var(--background);
+  color: var(--foreground);
   font-family:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -27,14 +146,27 @@ body {
 /* Scrollbars that don't shout in a dark, dense console. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3f3f46 transparent;
+  scrollbar-color: oklch(0.442 0.017 285.786) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: oklch(0.442 0.017 285.786);
   border-radius: 9999px;
-  border: 2px solid #09090b;
+  border: 2px solid var(--background);
+}
+
+/* One focus treatment for the whole app.
+ *
+ * There was none before: 42 hand-rolled buttons, 13 native selects and 5 native
+ * checkboxes each fell back to whatever the browser does, which on a dark
+ * background is frequently invisible. Keyboard navigation was effectively
+ * untestable. `:focus-visible` keeps it off mouse clicks. */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 }

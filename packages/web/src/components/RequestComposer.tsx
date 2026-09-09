@@ -4,7 +4,17 @@ import { gapsMovingTo, probesFor, unknownFieldsIn } from '@tokenshield/client';
 import type { SurfaceSpec } from '@tokenshield/client';
 
 import type { Composer } from '../hooks/useComposer';
-import { Card, selectClass } from './ui';
+import {
+  Button,
+  Card,
+  Field,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from './ui';
 
 const FAMILY_TONE: Record<string, string> = {
   openai: 'border-sky-800/60 text-sky-200 bg-sky-950/30',
@@ -72,7 +82,8 @@ export function RequestComposer({
   const silentLosses = gapsMovingTo(
     composer.surface.id === 'responses' ? 'responses' : 'chat.completions',
   ).filter((g) => g.equivalent === null);
-  const showLosses = composer.surface.id === 'responses' || composer.surface.id === 'chat.completions';
+  const showLosses =
+    composer.surface.id === 'responses' || composer.surface.id === 'chat.completions';
 
   return (
     <div className="space-y-5">
@@ -89,41 +100,41 @@ export function RequestComposer({
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-zinc-500">
-              Model
-            </span>
-            <select
-              className={selectClass}
-              value={composer.model}
-              onChange={(e) => composer.setModel(e.target.value)}
+          <Field label="Model">
+            {/* An empty `value` is not a legal Radix item value — it is how the
+                component spells "nothing selected" internally — so the
+                no-models case becomes a placeholder on a disabled trigger
+                rather than a selectable option nobody should pick. */}
+            <Select
+              value={composer.model === '' ? undefined : composer.model}
+              onValueChange={composer.setModel}
               disabled={composer.models.length === 0}
             >
-              {composer.models.length === 0 && (
-                <option value="">— no models for this key —</option>
-              )}
-              {composer.models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="— no models for this key —" />
+              </SelectTrigger>
+              <SelectContent>
+                {composer.models.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {composer.modelsError !== null && (
-              <span className="mt-1 block text-xs text-amber-500">{composer.modelsError}</span>
+              <span className="mt-1 block text-xs text-warn-foreground">
+                {composer.modelsError}
+              </span>
             )}
-          </label>
+          </Field>
 
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-zinc-500">
-              Prompt
-            </span>
-            <textarea
-              className={`${selectClass} min-h-[42px] resize-y`}
+          <Field label="Prompt">
+            <Textarea
               rows={2}
               value={composer.prompt}
               onChange={(e) => composer.setPrompt(e.target.value)}
             />
-          </label>
+          </Field>
         </div>
 
         {extraControls !== undefined && <div className="mt-4">{extraControls}</div>}
@@ -168,13 +179,9 @@ export function RequestComposer({
         title="Request body"
         subtitle="Sent verbatim. Nothing here is validated or corrected — that is the point."
         right={
-          <button
-            type="button"
-            onClick={composer.reset}
-            className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
-          >
+          <Button type="button" onClick={composer.reset} variant="outline" size="sm">
             reset
-          </button>
+          </Button>
         }
       >
         <textarea
@@ -217,8 +224,8 @@ export function RequestComposer({
             <p className="mt-1 text-[10px] leading-tight text-amber-200/60">
               Per LiteLLM v1.100.0. Sending anyway is allowed and often the point — whether the
               gateway refuses these or quietly ignores them is the finding. A silently ignored{' '}
-              <code className="mono">max_tokens</code> on Responses caps nothing, so the whole answer
-              is billed.
+              <code className="mono">max_tokens</code> on Responses caps nothing, so the whole
+              answer is billed.
             </p>
           </div>
         )}

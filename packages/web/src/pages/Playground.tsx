@@ -6,10 +6,9 @@ import type { AuthScheme, Exchange } from '@tokenshield/client';
 import { api } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
 import { RequestComposer } from '../components/RequestComposer';
-import { Card, Empty, Json, VerdictPill } from '../components/ui';
+import { Button, Card, Empty, Json, VerdictPill } from '../components/ui';
 import { useComposer } from '../hooks/useComposer';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
-
 
 interface PlaygroundProps {
   profileId: string;
@@ -56,14 +55,9 @@ export function Playground(props: PlaygroundProps) {
         surfaces={SURFACES}
         showProbes
         actions={
-          <button
-            type="button"
-            onClick={send}
-            disabled={sending || !composer.parsed.ok}
-            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button type="button" onClick={send} disabled={sending || !composer.parsed.ok}>
             {sending ? 'Sending…' : `Send to ${composer.surface.label}`}
-          </button>
+          </Button>
         }
         onSubmit={send}
         sendHint={

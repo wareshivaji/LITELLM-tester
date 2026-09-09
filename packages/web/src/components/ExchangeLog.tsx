@@ -4,7 +4,7 @@ import type { Exchange, ExchangeSummary } from '@tokenshield/client';
 
 import { api } from '../api';
 import { ExchangeDetail } from './ExchangeDetail';
-import { Card, Empty, VerdictLegend, VerdictPill } from './ui';
+import { Button, Card, Empty, VerdictLegend, VerdictPill } from './ui';
 
 export function ExchangeLog({
   runs,
@@ -42,13 +42,9 @@ export function ExchangeLog({
       title="Exchange log"
       subtitle={`${total} of ${capacity} kept in memory · nothing is written to a database`}
       right={
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:border-zinc-600 hover:text-zinc-100"
-        >
+        <Button type="button" onClick={onRefresh} variant="outline" size="sm">
           Refresh
-        </button>
+        </Button>
       }
     >
       <div className="mb-3">

@@ -8,7 +8,14 @@
     "types": ["vite/client", "node"],
     "noEmit": true,
     "declaration": false,
-    "sourceMap": false
+    "sourceMap": false,
+    // shadcn/ui's generated components import each other as `@/components/ui/x`
+    // and `@/lib/utils`. Keeping their import style unedited is what makes them
+    // re-generatable: `shadcn add` writes a file that compiles as-is.
+    // Mirrored in vite.config.ts — TypeScript resolves types, Vite resolves the
+    // actual module, and the two have to agree.
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

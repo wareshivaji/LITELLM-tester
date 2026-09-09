@@ -4,7 +4,21 @@ import type { AuthScheme, PromptResult, PromptSurfaceId } from '@tokenshield/cli
 
 import { api, runPrompts } from '../api';
 import type { PromptCatalogue, PromptDryRun } from '../api';
-import { Card, Empty, Json, Notice, selectClass, StatusPill } from '../components/ui';
+import {
+  Button,
+  Card,
+  Checkbox,
+  Empty,
+  Json,
+  Label,
+  Notice,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  StatusPill,
+} from '../components/ui';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
 
 interface PromptLabProps {
@@ -140,10 +154,10 @@ export function PromptLab(props: PromptLabProps) {
         subtitle="One prompt, both surfaces, checked on what came back rather than on the HTTP envelope."
       >
         <p className="text-[12px] leading-relaxed text-zinc-500">
-          A scenario asks whether the gateway answered in the right <em>shape</em>. This asks whether
-          it did the right <em>thing</em> — and whether it does the same thing on both surfaces. The
-          two disagree about everything: a user turn is <code>messages[]</code> on one and{' '}
-          <code>input[]</code> with explicit content parts on the other, the answer is{' '}
+          A scenario asks whether the gateway answered in the right <em>shape</em>. This asks
+          whether it did the right <em>thing</em> — and whether it does the same thing on both
+          surfaces. The two disagree about everything: a user turn is <code>messages[]</code> on one
+          and <code>input[]</code> with explicit content parts on the other, the answer is{' '}
           <code>choices[0].message.content</code> versus an <code>output[]</code> array, and tool
           calls live in different places entirely. A customer migrating between them has no way to
           check they got the same behaviour. That is what the <strong>agree</strong> column is.
@@ -151,36 +165,47 @@ export function PromptLab(props: PromptLabProps) {
 
         {catalogue !== null && (
           <p className="mt-2 text-[11px] text-zinc-600">
-            MCP cases point at the lab&rsquo;s own server, <code>{catalogue.mcpServerUrl}</code> — no
-            configured org needed. Its answer is deliberately absurd, so if the phrase comes back the
-            tool genuinely ran.
+            MCP cases point at the lab&rsquo;s own server, <code>{catalogue.mcpServerUrl}</code> —
+            no configured org needed. Its answer is deliberately absurd, so if the phrase comes back
+            the tool genuinely ran.
           </p>
         )}
       </Card>
 
       <Card title="What to send">
         <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-xs text-zinc-400">
-            Model
-            <select className={selectClass} value={model} onChange={(e) => setModel(e.target.value)}>
-              {models.length === 0 && <option value="">(no catalogue)</option>}
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex items-center gap-2">
+            <Label>Model</Label>
+            <Select
+              value={model === '' ? undefined : model}
+              onValueChange={setModel}
+              disabled={models.length === 0}
+            >
+              <SelectTrigger size="sm" className="w-64">
+                <SelectValue placeholder="(no catalogue)" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="flex items-center gap-3">
             <span className="text-xs text-zinc-500">Surfaces</span>
             {(['chat.completions', 'responses'] as PromptSurfaceId[]).map((s) => (
-              <label key={s} className="flex items-center gap-1.5 text-xs text-zinc-400">
-                <input
-                  type="checkbox"
-                  className="accent-sky-600"
+              <label
+                key={s}
+                htmlFor={`surface-${s}`}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
+                <Checkbox
+                  id={`surface-${s}`}
                   checked={surfaces.includes(s)}
-                  onChange={() => toggleSurface(s)}
+                  onCheckedChange={() => toggleSurface(s)}
                 />
                 <code>{SURFACE_LABEL[s]}</code>
               </label>
@@ -194,11 +219,10 @@ export function PromptLab(props: PromptLabProps) {
               key={c.id}
               className="flex cursor-pointer items-start gap-2 rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2 hover:border-zinc-700"
             >
-              <input
-                type="checkbox"
-                className="mt-0.5 accent-sky-600"
+              <Checkbox
+                className="mt-0.5"
                 checked={selected.includes(c.id)}
-                onChange={() => toggleCase(c.id)}
+                onCheckedChange={() => toggleCase(c.id)}
               />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
@@ -215,7 +239,9 @@ export function PromptLab(props: PromptLabProps) {
                   )}
                   <span className="mono text-[10px] text-zinc-600">max {c.maxTokens}</span>
                 </span>
-                <span className="mt-0.5 block text-[11px] leading-relaxed text-zinc-500">{c.why}</span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-zinc-500">
+                  {c.why}
+                </span>
                 <span className="mono mt-1 block truncate text-[10px] text-zinc-600">
                   &ldquo;{c.prompt}&rdquo;
                 </span>
@@ -233,14 +259,14 @@ export function PromptLab(props: PromptLabProps) {
           >
             Preview requests
           </button>
-          <button
+          <Button
             type="button"
-            className="rounded bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-600 disabled:opacity-40"
+            size="sm"
             onClick={() => void run()}
             disabled={running || estimate.calls === 0 || props.keyAlias === null}
           >
             {running ? 'Running…' : 'Run prompts'}
-          </button>
+          </Button>
           {running && (
             <button
               type="button"
@@ -329,7 +355,9 @@ export function PromptLab(props: PromptLabProps) {
                   {r.outcomes.map((o) => (
                     <div key={o.surface} className="rounded border border-zinc-800 bg-zinc-950 p-2">
                       <div className="flex items-center gap-2">
-                        <code className="text-[10px] text-zinc-400">{SURFACE_LABEL[o.surface]}</code>
+                        <code className="text-[10px] text-zinc-400">
+                          {SURFACE_LABEL[o.surface]}
+                        </code>
                         <StatusPill status={o.ok ? 'pass' : 'fail'} />
                         <span className="mono text-[10px] text-zinc-600">
                           {o.status ?? '—'} · {Math.round(o.totalMs)}ms
@@ -392,7 +420,8 @@ export function PromptLab(props: PromptLabProps) {
                         <ul className="mt-1.5 space-y-0.5 border-t border-zinc-800 pt-1.5">
                           {(o.mcpIssues ?? []).map((issue, i) => (
                             <li key={i} className="text-[10px] leading-tight text-amber-300/80">
-                              <span className="mono text-amber-400">{issue.kind}</span> — {issue.detail}
+                              <span className="mono text-amber-400">{issue.kind}</span> —{' '}
+                              {issue.detail}
                             </li>
                           ))}
                         </ul>

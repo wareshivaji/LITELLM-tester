@@ -32,6 +32,10 @@ function labPort(): number {
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // The other half of the `@/*` alias declared in tsconfig.json. TypeScript
+  // resolves types through `paths`; the bundler needs its own mapping or the
+  // build fails on imports that typecheck cleanly.
+  resolve: { alias: { '@': resolve(__dirname, 'src') } },
   server: {
     host: '127.0.0.1',
     port: 5173,

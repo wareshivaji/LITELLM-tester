@@ -7,7 +7,25 @@ import type { AuthScheme, Exchange, ModelInfo, ToolTurn } from '@tokenshield/cli
 import { api } from '../api';
 import type { McpBrowseResult, ToolLoopResult } from '../api';
 import { ExchangeDetail } from '../components/ExchangeDetail';
-import { Card, Empty, Json, selectClass, StatusPill, VerdictPill } from '../components/ui';
+import {
+  Button,
+  Card,
+  Checkbox,
+  Empty,
+  Field,
+  Input,
+  Json,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+  StatusPill,
+  VerdictPill,
+} from '../components/ui';
 import type { ModelCatalogue } from '../hooks/useModelCatalogue';
 
 interface ToolsMcpProps {
@@ -76,7 +94,15 @@ function ToolLoopCard({
     setError(null);
     setResult(null);
     api
-      .toolLoop({ ...target, model, prompt, tools: selected, toolChoice, surfaceId, wrongToolShape: wrongShape })
+      .toolLoop({
+        ...target,
+        model,
+        prompt,
+        tools: selected,
+        toolChoice,
+        surfaceId,
+        wrongToolShape: wrongShape,
+      })
       .then(setResult)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
@@ -92,51 +118,55 @@ function ToolLoopCard({
       right={<StatusPill status="warn" label="spends" />}
     >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-zinc-500">
-            Model
-          </span>
-          <select
-            className={selectClass}
-            value={model}
-            onChange={(e) => onModel(e.target.value)}
+        <Field label="Model">
+          <Select
+            value={model === '' ? undefined : model}
+            onValueChange={onModel}
             disabled={models.length === 0}
           >
-            {models.length === 0 && <option value="">— none loaded —</option>}
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}
-              </option>
-            ))}
-          </select>
-        </label>
+            <SelectTrigger>
+              <SelectValue placeholder="— none loaded —" />
+            </SelectTrigger>
+            <SelectContent>
+              {models.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
 
-        <label className="block lg:col-span-2">
-          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-zinc-500">
-            Prompt
-          </span>
-          <input className={selectClass} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-        </label>
+        <div className="lg:col-span-2">
+          <Field label="Prompt">
+            <Input value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          </Field>
+        </div>
 
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-zinc-500">
-            tool_choice
-          </span>
-          <select
-            className={selectClass}
-            value={toolChoice}
-            onChange={(e) => setToolChoice(e.target.value)}
-          >
-            <option value="auto">auto</option>
-            <option value="none">none</option>
-            <option value="required">required</option>
-            {TOOL_PRESETS.map((t) => (
-              <option key={t.id} value={t.id}>
-                force {t.id}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Field label="tool_choice">
+          <Select value={toolChoice} onValueChange={setToolChoice}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">auto</SelectItem>
+              <SelectItem value="none">none</SelectItem>
+              <SelectItem value="required">required</SelectItem>
+              {/* Grouped, which the native control could not do: the three
+                  OpenAI values and "force this specific tool" are different
+                  kinds of answer and used to sit in one flat list. */}
+              <SelectSeparator />
+              <SelectGroup>
+                <SelectLabel>force a named tool</SelectLabel>
+                {TOOL_PRESETS.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.id}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
       </div>
 
       <div className="mt-3">
@@ -158,12 +188,15 @@ function ToolLoopCard({
               {sid === 'responses' ? '/v1/responses' : '/v1/chat/completions'}
             </button>
           ))}
-          <label className="ml-2 flex items-center gap-1.5 text-[11px] text-zinc-400">
-            <input
-              type="checkbox"
+          <label
+            htmlFor="wrong-shape"
+            className="ml-2 flex items-center gap-1.5 text-[11px] text-muted-foreground"
+          >
+            <Checkbox
+              id="wrong-shape"
               checked={wrongShape}
-              onChange={(e) => setWrongShape(e.target.checked)}
-              className="accent-amber-600"
+              onCheckedChange={(v) => setWrongShape(v === true)}
+              className="data-[state=checked]:border-warn-foreground data-[state=checked]:bg-warn-foreground/80"
             />
             send the other surface&rsquo;s tool shape
           </label>
@@ -200,14 +233,13 @@ function ToolLoopCard({
       </div>
 
       <div className="mt-4 flex items-center gap-3">
-        <button
+        <Button
           type="button"
           onClick={run}
           disabled={busy || model.length === 0 || selected.length === 0}
-          className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
         >
           {busy ? 'Running the loop…' : 'Run tool loop'}
-        </button>
+        </Button>
         <span className="text-xs text-zinc-600">
           up to two model calls — the offer, then the results
         </span>
@@ -404,28 +436,18 @@ function McpCard({
       right={<StatusPill status="pass" label="free" />}
     >
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={browse}
-          disabled={busy}
-          className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
-        >
+        <Button type="button" onClick={browse} disabled={busy} variant="outline" size="sm">
           {busy ? 'Loading…' : 'List servers & tools'}
-        </button>
-        <button
-          type="button"
-          onClick={callAggregate}
-          disabled={busy}
-          className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
-        >
+        </Button>
+        <Button type="button" onClick={callAggregate} disabled={busy} variant="outline" size="sm">
           tools/list via POST /v1/mcp
-        </button>
+        </Button>
       </div>
       <p className="mt-2 text-[11px] text-zinc-600">
         The aggregate endpoint is what Cursor, Claude Desktop and the MCP SDKs speak. Locally it
-        needs <span className="mono">MCP_TEST_ALLOW_HOSTS</span> set — that variable is default-deny,
-        so an empty value looks like &ldquo;MCP is broken&rdquo; rather than &ldquo;no hosts
-        allowed&rdquo;.
+        needs <span className="mono">MCP_TEST_ALLOW_HOSTS</span> set — that variable is
+        default-deny, so an empty value looks like &ldquo;MCP is broken&rdquo; rather than &ldquo;no
+        hosts allowed&rdquo;.
       </p>
 
       {error !== null && <p className="mt-3 text-xs text-rose-400">{error}</p>}
@@ -460,13 +482,15 @@ function McpCard({
                       {server.transport}
                     </span>
                     <span className="text-[10px] text-zinc-600">{server.tools.length} tool(s)</span>
-                    <button
+                    <Button
                       type="button"
                       onClick={() => onTest(server.id)}
-                      className="ml-auto rounded-md border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-300 hover:border-zinc-600"
+                      variant="outline"
+                      size="xs"
+                      className="ml-auto"
                     >
                       test reachability
-                    </button>
+                    </Button>
                   </div>
                   {server.tools.length > 0 && (
                     <table className="w-full text-left text-[11px]">
@@ -509,7 +533,10 @@ function McpCard({
             <span className="mono text-zinc-500">{testResult.response?.status ?? '—'}</span>
             <VerdictPill kind={testResult.verdict.kind} />
           </div>
-          <Json value={testResult.response?.body ?? testResult.response?.bodyText} maxHeight={200} />
+          <Json
+            value={testResult.response?.body ?? testResult.response?.bodyText}
+            maxHeight={200}
+          />
         </div>
       )}
 
@@ -529,13 +556,10 @@ function McpCard({
         </div>
       )}
 
-      {result === null && aggregate === null && (
-        <Empty>Nothing loaded yet.</Empty>
-      )}
+      {result === null && aggregate === null && <Empty>Nothing loaded yet.</Empty>}
     </Card>
   );
 }
-
 
 // ── MCP policy ───────────────────────────────────────────────────────────────
 
@@ -548,7 +572,9 @@ const POLICY_TONE: Record<McpPolicy, string> = {
 
 function PolicyPill({ policy }: { policy: McpPolicy }) {
   return (
-    <span className={`mono rounded px-1.5 py-0.5 text-[10px] ${POLICY_TONE[policy]}`}>{policy}</span>
+    <span className={`mono rounded px-1.5 py-0.5 text-[10px] ${POLICY_TONE[policy]}`}>
+      {policy}
+    </span>
   );
 }
 
